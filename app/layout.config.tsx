@@ -10,10 +10,11 @@ import type { BaseLayoutProps } from 'fumadocs-ui/layouts/shared';
 export const baseOptions: BaseLayoutProps = {
   nav: {
     title: (
-      <>
-       <img src="/logo.png" className='w-fit h-16'/>
-        DezerX Spartan
-      </>
+      <div className="flex items-center space-x-2 p-2 sm:space-x-4">
+        <img src="/logo.png" className="h-12 sm:h-16 w-auto" alt="DezerX Spartan Logo" />
+        <span className="text-lg sm:text-2xl font-semibold">DezerX Spartan</span>
+      </div>
+
     ),
   },
   // see https://fumadocs.dev/docs/ui/navigation/links
