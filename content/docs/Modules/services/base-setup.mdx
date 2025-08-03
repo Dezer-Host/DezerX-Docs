@@ -1,0 +1,1649 @@
+---
+title: How to make Service
+description: How to make a Service in DezerX!
+icon: "ServerIcon"
+full: true
+---
+
+# Service Module Development Guide
+
+This guide explains how to create service modules (like VirtfusionModule, ProxmoxModule, etc.) using the same structure as the existing PterodactylService module.
+
+## Table of Contents
+
+1. [Quick Start](#quick-start)
+2. [Module Structure Overview](#module-structure-overview)
+3. [Core Service Files](#core-service-files)
+4. [Action Services](#action-services)
+5. [Required Models](#required-models)
+6. [Database Migrations](#database-migrations)
+7. [Service Provider Setup](#service-provider-setup)
+8. [Module Configuration](#module-configuration)
+9. [Implementation Steps](#implementation-steps)
+10. [Best Practices](#best-practices)
+
+## Quick Start
+
+### Creating a New Module
+
+Use Laravel nwidart's module generator to create your service module:
+
+```bash
+php artisan module:make YourServiceNameService
+```
+
+**Important**: Module names must always end with "Service" (e.g., VirtfusionService, ProxmoxService).
+
+### Creating the Services Directory Structure
+
+After creating the module, you need to create the Services directory structure:
+
+```bash
+# Navigate to your module directory
+cd Modules/YourServiceNameService
+
+# Create the Services directory structure
+mkdir -p Services/Actions
+
+# Create the core service files
+touch Services/CancelService.php
+touch Services/MarketCheckoutConfig.php
+touch Services/ModuleServiceActions.php
+touch Services/RenewService.php
+touch Services/ServiceControlsService.php
+touch Services/YourServiceNameService.php
+
+# Create the action service files
+touch Services/Actions/CreateServerService.php
+touch Services/Actions/SuspendServerService.php
+touch Services/Actions/UnsuspendServerService.php
+touch Services/Actions/DeleteServerService.php
+```
+
+### Creating the Frontend Structure
+
+You also need to create the frontend structure for your module:
+
+```bash
+# Create the js directory and Pages subdirectory
+mkdir -p resources/js/Pages
+
+# Create the register.ts file
+touch resources/js/register.ts
+
+# Create example page components (adjust based on your module's needs)
+touch resources/js/Pages/Settings.tsx
+touch resources/js/Pages/Dashboard.tsx
+touch resources/js/Pages/Console.tsx
+```
+
+## Module Structure Overview
+
+A service module follows this directory structure:
+
+```
+Modules/YourServiceNameService/
+├── app/
+│   ├── Http/Controllers/
+│   ├── Jobs/
+│   └── Providers/
+├── config/
+├── database/
+│   ├── migrations/
+│   └── seeders/
+├── Models/
+├── resources/
+│   ├── assets/
+│   ├── js/
+│   │   ├── register.ts
+│   │   └── Pages/
+│   │       ├── Settings.tsx
+│   │       ├── Dashboard.tsx
+│   │       └── Console.tsx
+│   └── views/
+├── routes/
+├── Services/
+│   ├── Actions/
+│   │   ├── CreateServerService.php
+│   │   ├── SuspendServerService.php
+│   │   ├── UnsuspendServerService.php
+│   │   └── DeleteServerService.php
+│   ├── CancelService.php
+│   ├── MarketCheckoutConfig.php
+│   ├── ModuleServiceActions.php
+│   ├── RenewService.php
+│   ├── ServiceControlsService.php
+│   └── YourServiceNameService.php
+├── tests/
+├── composer.json
+├── module.json
+├── package.json
+└── vite.config.js
+```
+
+## Core Service Files
+
+### 1. CancelService.php
+
+**Purpose**: Handles service cancellation and resource cleanup.
+
+**Required Methods**:
+- `cancelService(Service $service, bool $force = false): array`
+- `verifyPassword(string $password, User $user): bool` (optional)
+
+**Key Responsibilities**:
+- Delete/terminate external resources (servers, accounts, etc.)
+- Update service status to 'terminated'
+- Log operations for audit trail
+- Handle errors gracefully
+
+**Template**:
+```php
+<?php
+
+namespace Modules\YourServiceNameService\Services;
+
+use App\Models\Service;
+use Modules\YourServiceNameService\Services\Actions\DeleteServerService;
+use Illuminate\Support\Facades\Log;
+
+class CancelService
+{
+    /**
+     * Cancel a service and delete associated resource
+     *
+     * @param Service $service
+     * @param bool $force Whether to force delete the resource
+     * @return array
+     */
+    public function cancelService(Service $service, bool $force = false): array
+    {
+        try {
+            $resourceId = $service->config['external_api_resource_id'] ?? null;
+
+            if (!$resourceId) {
+                Log::warning('Resource ID not found in service configuration during cancellation', [
+                    'service_id' => $service->id,
+                    'config' => $service->config
+                ]);
+                throw new \Exception('Resource ID not found in service configuration');
+            }
+
+            $result = DeleteServerService::deleteServer($service->id, $force);
+
+            if (!$result['success']) {
+                throw new \Exception($result['error'] ?? 'Failed to delete resource');
+            }
+
+            $service->update([
+                'status' => 'terminated',
+                'due_date' => now(),
+            ]);
+
+            Log::info('Service cancelled successfully', [
+                'service_id' => $service->id,
+                'resource_id' => $resourceId,
+                'force_delete' => $force
+            ]);
+
+            return [
+                'success' => true,
+                'message' => 'Service cancelled successfully',
+                'service' => $service
+            ];
+
+        } catch (\Exception $e) {
+            Log::error('Failed to cancel service', [
+                'service_id' => $service->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return [
+                'success' => false,
+                'error' => $e->getMessage()
+            ];
+        }
+    }
+
+    /**
+     * Verify if the provided password matches the user's password
+     *
+     * @param string $password
+     * @param \App\Models\User $user
+     * @return bool
+     */
+    public function verifyPassword(string $password, \App\Models\User $user): bool
+    {
+        $hashedPassword = $user->getAttributes()['password'] ?? $user->getRawOriginal('password');
+        return \Illuminate\Support\Facades\Hash::check($password, $hashedPassword);
+    }
+}
+```
+
+### 2. ModuleServiceActions.php
+
+**Purpose**: Core service lifecycle management - creation, provisioning, and configuration.
+
+**Required Methods**:
+- `createServer(Product $product, User $user, array $config = []): Service`
+- `createServerForService(Service $service, array $userConfig = []): void`
+- `hasExistingConfiguration(Service $service): bool`
+
+**Key Responsibilities**:
+- Create external resources (servers, accounts, etc.)
+- Link external resources to internal service records
+- Handle product configuration and user customization
+- Manage database transactions
+- Create invoices and set service status
+
+**Template Structure**:
+```php
+<?php
+
+namespace Modules\YourServiceNameService\Services;
+
+use App\Models\{User, Service, Product, Invoice};
+use Modules\YourServiceNameService\Services\Actions\CreateServerService;
+use Modules\YourServiceNameService\Models\YourServiceNameUser;
+use Modules\YourServiceNameService\Models\YourServiceNameResource;
+use Illuminate\Support\Facades\{DB, Log};
+
+class ModuleServiceActions
+{
+    public function createServer(Product $product, User $user, array $config = []): Service
+    {
+        return DB::transaction(function () use ($product, $user, $config) {
+            // 1. Create or get external user account
+            $externalUser = $this->createOrGetExternalUser($user);
+            
+            // 2. Create service record
+            $service = Service::create([
+                'product_id' => $product->id,
+                'category_id' => $product->category_id,
+                'owner_id' => $user->id,
+                'price' => null,
+                'due_date' => now()->addMonth(),
+                'status' => 'pending',
+                'module' => $product->module,
+                'config' => array_merge($product->module_config, $config),
+            ]);
+
+            // 3. Create invoice
+            Invoice::create([
+                'user_id' => $user->id,
+                'service_id' => $service->id,
+                'price' => $service->price,
+                'status' => 'unpaid',
+                'due_date' => now()->addDays(7),
+            ]);
+
+            // 4. Prepare resource data from product configuration
+            $resourceData = [
+                'name' => $config['server_name'] ?? ($product->name . ' - ' . $user->name),
+                'user_id' => $externalUser->external_user_id,
+                // Add other fields based on your service requirements
+                'memory' => $product->module_config['memory'] ?? 1024,
+                'disk' => $product->module_config['disk'] ?? 5120,
+                'cpu' => $product->module_config['cpu'] ?? 100,
+            ];
+            
+            // 5. Create external resource using Action service
+            $resourceResult = CreateServerService::createServer($resourceData);
+            
+            if (!$resourceResult['success']) {
+                throw new \Exception('Failed to create resource: ' . $resourceResult['error']);
+            }
+
+            // 6. Store resource information in local database
+            $externalResourceData = $resourceResult['data'];
+            $resource = YourServiceNameResource::create([
+                'service_id' => $service->id,
+                'module_yourservicename_user_id' => $externalUser->id,
+                'external_resource_id' => $externalResourceData['id'],
+                'identifier' => $externalResourceData['identifier'] ?? null,
+                'name' => $resourceData['name'],
+                'status' => 'active',
+                'config' => array_merge($product->module_config, $config),
+            ]);
+
+            // 7. Update service with resource information
+            $service->update([
+                'config' => array_merge($service->config, [
+                    'external_resource_id' => $resource->id,
+                    'external_api_resource_id' => $externalResourceData['id'],
+                    'provisioned' => true,
+                    'resource_created_at' => now()->toISOString(),
+                ])
+            ]);
+
+            Log::info('External resource created successfully', [
+                'service_id' => $service->id,
+                'resource_id' => $externalResourceData['id']
+            ]);
+
+            return $service;
+        });
+    }
+
+    public function createServerForService(Service $service, array $userConfig = []): void
+    {
+        DB::transaction(function () use ($service, $userConfig) {
+            $user = User::find($service->owner_id);
+            if (!$user) {
+                throw new \Exception('User not found for service ID: ' . $service->id);
+            }
+
+            $externalUser = $this->createOrGetExternalUser($user);
+
+            // Prepare resource data
+            $resourceData = [
+                'name' => $userConfig['server_name'] ?? "Resource for Service {$service->id}",
+                'user_id' => $externalUser->external_user_id,
+                // Add configuration from userConfig or service config
+            ];
+
+            $this->createExternalResource($service, $externalUser, $resourceData, $userConfig);
+        });
+    }
+
+    public function hasExistingConfiguration(Service $service): bool
+    {
+        return isset($service->config['provisioned']) && $service->config['provisioned'] === true;
+    }
+
+    private function createOrGetExternalUser(User $user): YourServiceNameUser
+    {
+        $externalUser = YourServiceNameUser::where('user_id', $user->id)->first();
+        
+        if (!$externalUser) {
+            // Create user in external service
+            $userResult = CreateUserService::createUser([
+                'email' => $user->email,
+                'name' => $user->name
+            ]);
+
+            if (!$userResult['success']) {
+                throw new \Exception('Failed to create external user: ' . $userResult['error']);
+            }
+
+            $externalUserId = $userResult['data']['id'];
+
+            $externalUser = YourServiceNameUser::create([
+                'user_id' => $user->id,
+                'external_user_id' => $externalUserId,
+                'email' => $user->email,
+                'username' => $user->name,
+            ]);
+        }
+
+        return $externalUser;
+    }
+
+    private function createExternalResource(Service $service, YourServiceNameUser $externalUser, array $resourceData, array $config): void
+    {
+        $resourceResult = CreateServerService::createServer($resourceData);
+        
+        if (!$resourceResult['success']) {
+            YourServiceNameResource::create([
+                'service_id' => $service->id,
+                'module_yourservicename_user_id' => $externalUser->id,
+                'external_resource_id' => '0',
+                'name' => $resourceData['name'],
+                'status' => 'failed',
+                'config' => $config,
+            ]);
+            throw new \Exception('Failed to create resource: ' . $resourceResult['error']);
+        }
+
+        $externalResourceData = $resourceResult['data'];
+        $resource = YourServiceNameResource::create([
+            'service_id' => $service->id,
+            'module_yourservicename_user_id' => $externalUser->id,
+            'external_resource_id' => $externalResourceData['id'],
+            'identifier' => $externalResourceData['identifier'] ?? null,
+            'name' => $resourceData['name'],
+            'status' => 'active',
+            'config' => $config,
+        ]);
+        
+        $service->update([
+            'config' => array_merge($service->config ?? [], [
+                'external_resource_id' => $resource->id,
+                'external_api_resource_id' => $externalResourceData['id'],
+                'provisioned' => true,
+                'resource_created_at' => now()->toISOString(),
+            ])
+        ]);
+
+        Log::info('External resource created for existing service', [
+            'service_id' => $service->id,
+            'resource_id' => $externalResourceData['id']
+        ]);
+    }
+}
+```
+
+### 3. RenewService.php
+
+**Purpose**: Handles service renewals and billing cycle changes.
+
+**Required Interface**: Must implement `App\Services\RenewServiceInterface`
+
+**Required Methods**:
+- `renewService(Service $service, string $billingCycle): array`
+- `getAvailableBillingCycles(Service $service): array`
+- `calculatePrice(Service $service, string $billingCycle): float`
+
+**Key Responsibilities**:
+- Update service due dates and pricing
+- Handle unsuspension of suspended services
+- Calculate pricing with discounts
+- Support multiple billing cycles
+
+**Template**:
+```php
+<?php
+
+namespace Modules\YourServiceNameService\Services;
+
+use App\Models\Service;
+use App\Services\RenewServiceInterface;
+use Modules\YourServiceNameService\Services\Actions\UnsuspendServerService;
+use Carbon\Carbon;
+
+class RenewService implements RenewServiceInterface
+{
+    public function renewService(Service $service, string $billingCycle): array
+    {
+        try {
+            $newDueDate = $this->calculateDueDate($service, $billingCycle);
+            $price = $this->calculatePrice($service, $billingCycle);
+            
+            $service->update([
+                'billing_cycle' => $billingCycle,
+                'price' => $price,
+                'due_date' => $newDueDate,
+                'status' => 'active'
+            ]);
+
+            // Handle unsuspension if service was suspended
+            $resourceId = $service->config['external_resource_id'] 
+                ?? $service->config['external_api_resource_id']
+                ?? null;
+                
+            if ($service->status === 'suspended' && $resourceId) {
+                $result = UnsuspendServerService::unsuspendServer($service->id);
+                if (!$result['success']) {
+                    \Log::warning('Failed to unsuspend server during renewal', [
+                        'service_id' => $service->id,
+                        'resource_id' => $resourceId,
+                        'error' => $result['error']
+                    ]);
+                }
+            } elseif ($service->status === 'suspended') {
+                \Log::warning('Resource ID not found in service configuration during renewal', [
+                    'service_id' => $service->id,
+                    'config' => $service->config
+                ]);
+            }
+
+            return [
+                'success' => true,
+                'message' => 'Service renewed successfully',
+                'service' => $service
+            ];
+
+        } catch (\Exception $e) {
+            return [
+                'success' => false,
+                'error' => $e->getMessage()
+            ];
+        }
+    }
+
+    public function getAvailableBillingCycles(Service $service): array
+    {
+        $durationConfig = $service->product->duration_config ?? [];
+
+        $cycles = [];
+        foreach ($durationConfig as $type => $config) {
+            if ($config['enabled']) {
+                $basePrice = (float) $config['price'];
+                $finalPrice = $service->calculatePriceWithLifetimeDiscount($basePrice);
+                
+                $cycles[] = [
+                    'type' => $type,
+                    'price' => round($finalPrice, 2),
+                    'original_price' => $service->hasLifetimeDiscount() ? round($basePrice, 2) : null,
+                    'discount_amount' => $service->hasLifetimeDiscount() ? round($basePrice - $finalPrice, 2) : 0,
+                    'label' => ucfirst($type)
+                ];
+            }
+        }
+        return $cycles;
+    }
+
+    public function calculatePrice(Service $service, string $billingCycle): float
+    {
+        $durationConfig = $service->product->duration_config ?? [];
+        
+        if (isset($durationConfig[$billingCycle]) && $durationConfig[$billingCycle]['enabled']) {
+            $basePrice = (float) $durationConfig[$billingCycle]['price'];
+            
+            // Apply lifetime discount if applicable and round to 2 decimal places
+            $finalPrice = $service->calculatePriceWithLifetimeDiscount($basePrice);
+            return round($finalPrice, 2);
+        }
+
+        throw new \Exception('Invalid billing cycle specified');
+    }
+
+    private function calculateDueDate(Service $service, string $billingCycle): \DateTime
+    {
+        $currentDueDate = $service->due_date ? Carbon::parse($service->due_date) : now();
+        $baseDueDate = $currentDueDate->isPast() ? now() : $currentDueDate;
+        
+        switch ($billingCycle) {
+            case 'weekly':
+                return $baseDueDate->addWeek();
+            case 'monthly':
+                return $baseDueDate->addMonth();
+            case 'quarterly':
+                return $baseDueDate->addMonths(3);
+            case 'yearly':
+                return $baseDueDate->addYear();
+            case 'lifetime':
+                return $baseDueDate->addYears(100);
+            default:
+                throw new \Exception('Invalid billing cycle');
+        }
+    }
+}
+```
+
+### 4. ServiceControlsService.php
+
+**Purpose**: Defines UI controls, tabs, and permissions for the service management interface.
+
+**Required Methods**:
+- `getServiceControls(): array`
+
+**Returns Structure**:
+```php
+[
+    'buttons' => [
+        [
+            'label' => 'Control Panel',
+            'href' => 'https://your-panel-url.com',
+            'color' => 'primary'
+        ]
+    ],
+    'tabs' => [
+        [
+            'label' => 'Dashboard',
+            'href' => '/dashboard',
+            'icon' => '<svg>...</svg>'
+        ]
+    ],
+    'permissions' => [
+        '/dashboard' => 'Dashboard Access',
+        '/settings' => 'Settings Access'
+    ]
+]
+```
+
+**Template**:
+```php
+<?php
+
+namespace Modules\YourServiceNameService\Services;
+
+use Modules\YourServiceNameService\Models\YourServiceNameCredential;
+use Illuminate\Support\Facades\Log;
+
+class ServiceControlsService
+{
+    protected $credential;
+
+    public function __construct()
+    {
+        try {
+            Log::info('ServiceControlsService: Constructor called');
+            $this->credential = YourServiceNameCredential::first();
+            
+            if ($this->credential) {
+                Log::info('ServiceControlsService: Credential found', [
+                    'id' => $this->credential->id ?? 'unknown',
+                    'api_url' => $this->credential->api_url ?? 'no_url'
+                ]);
+            } else {
+                Log::warning('ServiceControlsService: No credential found in database');
+            }
+            
+        } catch (\Exception $e) {
+            Log::error('ServiceControlsService: Error in constructor', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            $this->credential = null;
+        }
+    }
+
+    public function getServiceControls()
+    {
+        try {
+            Log::info('ServiceControlsService: getServiceControls called');
+            
+            $controls = [
+                'buttons' => [
+                    [
+                        'label' => 'Control Panel',
+                        'href' => $this->credential ? $this->credential->api_url : '#',
+                        'color' => 'primary'
+                    ]
+                ],
+                'tabs' => [
+                    [
+                        'label' => 'Dashboard',
+                        'href' => '/dashboard',
+                        'icon' => '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>'
+                    ],
+                    [
+                        'label' => 'Console',
+                        'href' => '/console',
+                        'icon' => '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 11 2-2-2-2"/><path d="M11 13h4"/><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/></svg>'
+                    ],
+                    [
+                        'label' => 'Settings',
+                        'href' => '/settings',
+                        'icon' => '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20a8 8 0 1 0 0-16 8 8 0 0 0 0 16Z"/><path d="M12 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z"/><path d="M12 2v2"/><path d="M12 22v-2"/><path d="m17 20.66-1-1.73"/><path d="M11 10.27 7 3.34"/><path d="m20.66 17-1.73-1"/><path d="m3.34 7 1.73 1"/><path d="M14 12h8"/><path d="M2 12h2"/><path d="m20.66 7-1.73 1"/><path d="m3.34 17 1.73-1"/><path d="m17 3.34-1 1.73"/><path d="m11 13.73-4 6.93"/></svg>'
+                    ],
+                ],
+                'permissionCategories' => [
+                    'dashboard' => [
+                        'label' => 'Dashboard',
+                        'icon' => '📊',
+                        'parent' => '/dashboard',
+                        'children' => []
+                    ],
+                    'console' => [
+                        'label' => 'Console Access',
+                        'icon' => '💻',
+                        'parent' => '/console',
+                        'children' => []
+                    ],
+                    'settings' => [
+                        'label' => 'Settings',
+                        'icon' => '⚙️',
+                        'parent' => '/settings',
+                        'children' => [
+                            '/settings/update-details' => 'Update Details',
+                            '/settings/reinstall' => 'Reinstall',
+                            '/settings/reset-password' => 'Reset Password'
+                        ]
+                    ]
+                ],
+                'permissions' => [
+                    '/dashboard' => 'Dashboard',
+                    '/console' => 'Console Access',
+                    '/settings' => 'Settings',
+                    '/settings/update-details' => 'Update Details',
+                    '/settings/reinstall' => 'Reinstall',
+                    '/settings/reset-password' => 'Reset Password',
+                ]
+            ];
+            
+            Log::info('ServiceControlsService: Controls generated successfully', [
+                'buttons_count' => count($controls['buttons']),
+                'tabs_count' => count($controls['tabs']),
+                'permissions_count' => count($controls['permissions']),
+                'credential_available' => $this->credential ? true : false
+            ]);
+            
+            return $controls;
+            
+        } catch (\Exception $e) {
+            Log::error('ServiceControlsService: Error in getServiceControls', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return [
+                'buttons' => [],
+                'tabs' => [],
+                'permissions' => []
+            ];
+        }
+    }
+}
+```
+
+### 5. MarketCheckoutConfig.php
+
+**Purpose**: Defines checkout form fields for service customization.
+
+**Required Methods**:
+- `getCheckoutFields(): array`
+- `validateCheckoutData(array $data): array`
+
+**Field Structure**:
+```php
+[
+    'name' => 'field_name',
+    'label' => 'Display Label',
+    'placeholder' => 'Placeholder text',
+    'type' => 'text|textarea|select|number',
+    'required' => true|false,
+    'description' => 'Help text',
+    'options' => [] // For select fields
+]
+```
+
+**Template**:
+```php
+<?php
+
+namespace Modules\YourServiceNameService\Services;
+
+class MarketCheckoutConfig
+{
+    /**
+     * Get checkout configuration fields for YourServiceNameService
+     * 
+     * @return array
+     */
+    public static function getCheckoutFields(): array
+    {
+        return [
+            [
+                'name' => 'server_name',
+                'label' => 'Server Name',
+                'placeholder' => 'Enter server name',
+                'type' => 'text',
+                'required' => false,
+                'description' => 'Custom name for your server'
+            ],
+            [
+                'name' => 'notes',
+                'label' => 'Notes',
+                'placeholder' => 'Add any notes or special requirements...',
+                'type' => 'textarea',
+                'required' => false,
+                'description' => 'Additional notes for your server configuration'
+            ]
+        ];
+    }
+
+    /**
+     * Validate checkout data against configuration
+     * 
+     * @param array $data
+     * @return array
+     */
+    public static function validateCheckoutData(array $data): array
+    {
+        $fields = self::getCheckoutFields();
+        $validated = [];
+        $errors = [];
+
+        foreach ($fields as $field) {
+            $value = $data[$field['name']] ?? null;
+            if ($field['required'] && empty($value)) {
+                $errors[$field['name']] = "The {$field['label']} field is required.";
+                continue;
+            }
+            if (!empty($value)) {
+                $validated[$field['name']] = $value;
+            }
+        }
+
+        return [
+            'validated' => $validated,
+            'errors' => $errors
+        ];
+    }
+}
+```
+
+### 6. YourServiceNameService.php (Main Service Class)
+
+**Purpose**: Module configuration and external API integration setup.
+
+**Required Methods**:
+- `getModuleConfig(): array`
+
+**Returns**: Configuration array for product creation form with fields like:
+- Resource limits (CPU, RAM, Disk)
+- Location/region selection
+- Plan/template selection
+- Feature toggles
+
+**Template**:
+```php
+<?php
+
+namespace Modules\YourServiceNameService\Services;
+
+use Modules\YourServiceNameService\Models\YourServiceNameCredential;
+
+class YourServiceNameService
+{
+    private function getCredentials(): ?array
+    {
+        $credentials = YourServiceNameCredential::first();
+        return $credentials ? [
+            'api_url' => $credentials->api_url,
+            'api_key' => $credentials->api_key
+        ] : null;
+    }
+
+    public function getModuleConfig(): array
+    {
+        return [
+            'tabName' => 'YourServiceName Configuration',
+            'inputs' => [
+                [
+                    'name' => 'plan_id',
+                    'label' => 'Plan',
+                    'type' => 'select',
+                    'defaultValue' => '',
+                    'required' => true,
+                    'tooltip' => 'Select a service plan',
+                    'options' => $this->getPlanOptions()
+                ],
+                [
+                    'name' => 'location_id',
+                    'label' => 'Location',
+                    'type' => 'select',
+                    'defaultValue' => '',
+                    'required' => true,
+                    'tooltip' => 'Select a location',
+                    'options' => $this->getLocationOptions()
+                ],
+                [
+                    'name' => 'memory',
+                    'label' => 'Memory (MB)',
+                    'type' => 'number',
+                    'defaultValue' => '1024',
+                    'required' => true,
+                    'tooltip' => 'Amount of memory in MB'
+                ],
+                [
+                    'name' => 'disk',
+                    'label' => 'Disk Space (GB)',
+                    'type' => 'number',
+                    'defaultValue' => '20',
+                    'required' => true,
+                    'tooltip' => 'Amount of disk space in GB'
+                ],
+                [
+                    'name' => 'cpu',
+                    'label' => 'CPU Cores',
+                    'type' => 'number',
+                    'defaultValue' => '1',
+                    'required' => true,
+                    'tooltip' => 'Number of CPU cores'
+                ]
+            ]
+        ];
+    }
+
+    private function getPlanOptions(): array
+    {
+        // Fetch plans from external API or return static options
+        return [
+            ['value' => '1', 'label' => 'Basic Plan'],
+            ['value' => '2', 'label' => 'Premium Plan'],
+            ['value' => '3', 'label' => 'Enterprise Plan'],
+        ];
+    }
+
+    private function getLocationOptions(): array
+    {
+        // Fetch locations from external API or return static options
+        return [
+            ['value' => '1', 'label' => 'US East'],
+            ['value' => '2', 'label' => 'US West'],
+            ['value' => '3', 'label' => 'Europe'],
+        ];
+    }
+}
+```
+
+## Action Services
+
+Action services handle specific operations with the external service API. These are located in the `Services/Actions/` directory.
+
+### 1. CreateServerService.php
+
+**Purpose**: Creates resources (servers, VPS, etc.) in the external service.
+
+**Template**:
+```php
+<?php
+
+namespace Modules\YourServiceNameService\Services\Actions;
+
+use Illuminate\Support\Facades\Http;
+use Modules\YourServiceNameService\Models\YourServiceNameCredential;
+use Exception;
+
+class CreateServerService
+{
+    public static function createServer(array $resourceData): array
+    {
+        try {
+            $credentials = YourServiceNameCredential::first();
+            
+            if (!$credentials) {
+                throw new Exception('Service credentials not found');
+            }
+
+            // Validate required fields
+            $requiredFields = ['name', 'user_id', 'plan_id'];
+            foreach ($requiredFields as $field) {
+                if (!isset($resourceData[$field])) {
+                    throw new Exception("Required field '{$field}' is missing");
+                }
+            }
+
+            // Prepare API payload
+            $payload = [
+                'name' => $resourceData['name'],
+                'user_id' => $resourceData['user_id'],
+                'plan_id' => $resourceData['plan_id'],
+                'memory' => $resourceData['memory'] ?? 1024,
+                'disk' => $resourceData['disk'] ?? 20,
+                'cpu' => $resourceData['cpu'] ?? 1,
+            ];
+
+            // Make API request
+            $response = Http::withHeaders([
+                'Authorization' => 'Bearer ' . $credentials->api_key,
+                'Accept' => 'application/json',
+                'Content-Type' => 'application/json',
+            ])->post($credentials->api_url . '/api/servers', $payload);
+
+            if ($response->failed()) {
+                throw new Exception('Failed to create server: ' . $response->body());
+            }
+
+            return [
+                'success' => true,
+                'data' => $response->json(),
+                'message' => 'Server created successfully'
+            ];
+
+        } catch (Exception $e) {
+            return [
+                'success' => false,
+                'error' => $e->getMessage()
+            ];
+        }
+    }
+}
+```
+
+### 2. SuspendServerService.php
+
+**Purpose**: Suspends resources in the external service.
+
+**Template**:
+```php
+<?php
+
+namespace Modules\YourServiceNameService\Services\Actions;
+
+use Illuminate\Support\Facades\Http;
+use Modules\YourServiceNameService\Models\YourServiceNameCredential;
+use Modules\YourServiceNameService\Models\YourServiceNameResource;
+use App\Models\Service;
+use Exception;
+
+class SuspendServerService
+{
+    public static function suspendServer(int $serviceId): array
+    {
+        try {
+            $service = Service::find($serviceId);
+            if (!$service) {
+                throw new Exception('Service not found');
+            }
+
+            // Get external resource ID from service config
+            $externalResourceId = $service->config['external_api_resource_id'] ?? null;
+
+            if (!$externalResourceId) {
+                // Try to get from resource table
+                $resource = YourServiceNameResource::where('service_id', $serviceId)->first();
+                if (!$resource) {
+                    throw new Exception('Resource not found for this service');
+                }
+                $externalResourceId = $resource->external_resource_id;
+            }
+
+            $credentials = YourServiceNameCredential::first();
+            if (!$credentials) {
+                throw new Exception('Service credentials not found');
+            }
+
+            $response = Http::withHeaders([
+                'Authorization' => 'Bearer ' . $credentials->api_key,
+                'Accept' => 'application/json',
+            ])->post($credentials->api_url . '/api/servers/' . $externalResourceId . '/suspend');
+
+            if ($response->failed()) {
+                throw new Exception('Failed to suspend server: ' . $response->body());
+            }
+
+            return [
+                'success' => true,
+                'message' => 'Server suspended successfully'
+            ];
+
+        } catch (Exception $e) {
+            return [
+                'success' => false,
+                'error' => $e->getMessage()
+            ];
+        }
+    }
+}
+```
+
+### 3. UnsuspendServerService.php
+
+**Purpose**: Unsuspends resources in the external service.
+
+**Template**:
+```php
+<?php
+
+namespace Modules\YourServiceNameService\Services\Actions;
+
+use Illuminate\Support\Facades\Http;
+use Modules\YourServiceNameService\Models\YourServiceNameCredential;
+use Modules\YourServiceNameService\Models\YourServiceNameResource;
+use App\Models\Service;
+use Exception;
+
+class UnsuspendServerService
+{
+    public static function unsuspendServer(int $serviceId): array
+    {
+        try {
+            $service = Service::find($serviceId);
+            if (!$service) {
+                throw new Exception('Service not found');
+            }
+
+            // Get external resource ID from service config
+            $externalResourceId = $service->config['external_api_resource_id'] ?? null;
+
+            if (!$externalResourceId) {
+                // Try to get from resource table
+                $resource = YourServiceNameResource::where('service_id', $serviceId)->first();
+                if (!$resource) {
+                    throw new Exception('Resource not found for this service');
+                }
+                $externalResourceId = $resource->external_resource_id;
+            }
+
+            $credentials = YourServiceNameCredential::first();
+            if (!$credentials) {
+                throw new Exception('Service credentials not found');
+            }
+
+            $response = Http::withHeaders([
+                'Authorization' => 'Bearer ' . $credentials->api_key,
+                'Accept' => 'application/json',
+            ])->post($credentials->api_url . '/api/servers/' . $externalResourceId . '/unsuspend');
+
+            if ($response->failed()) {
+                throw new Exception('Failed to unsuspend server: ' . $response->body());
+            }
+
+            return [
+                'success' => true,
+                'message' => 'Server unsuspended successfully'
+            ];
+
+        } catch (Exception $e) {
+            return [
+                'success' => false,
+                'error' => $e->getMessage()
+            ];
+        }
+    }
+}
+```
+
+### 4. DeleteServerService.php
+
+**Purpose**: Deletes/terminates resources in the external service.
+
+**Template**:
+```php
+<?php
+
+namespace Modules\YourServiceNameService\Services\Actions;
+
+use Illuminate\Support\Facades\Http;
+use Modules\YourServiceNameService\Models\YourServiceNameCredential;
+use Modules\YourServiceNameService\Models\YourServiceNameResource;
+use App\Models\Service;
+use Exception;
+
+class DeleteServerService
+{
+    public static function deleteServer(int $serviceId, bool $force = false): array
+    {
+        try {
+            $service = Service::find($serviceId);
+            if (!$service) {
+                throw new Exception('Service not found');
+            }
+
+            // Get external resource ID from service config
+            $externalResourceId = $service->config['external_api_resource_id'] ?? null;
+
+            if (!$externalResourceId) {
+                // Try to get from resource table
+                $resource = YourServiceNameResource::where('service_id', $serviceId)->first();
+                if (!$resource) {
+                    throw new Exception('Resource not found for this service');
+                }
+                $externalResourceId = $resource->external_resource_id;
+            }
+
+            $credentials = YourServiceNameCredential::first();
+            if (!$credentials) {
+                throw new Exception('Service credentials not found');
+            }
+
+            $url = $credentials->api_url . '/api/servers/' . $externalResourceId;
+            if ($force) {
+                $url .= '?force=true';
+            }
+
+            $response = Http::withHeaders([
+                'Authorization' => 'Bearer ' . $credentials->api_key,
+                'Accept' => 'application/json',
+            ])->delete($url);
+
+            if ($response->failed()) {
+                throw new Exception('Failed to delete server: ' . $response->body());
+            }
+
+            return [
+                'success' => true,
+                'message' => 'Server deleted successfully'
+            ];
+
+        } catch (Exception $e) {
+            return [
+                'success' => false,
+                'error' => $e->getMessage()
+            ];
+        }
+    }
+}
+```
+
+## Required Models
+
+### 1. Credential Model
+Stores API credentials and connection details for the external service.
+
+```php
+<?php
+
+namespace Modules\YourServiceNameService\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+class YourServiceNameCredential extends Model
+{
+    protected $table = 'module_yourservicename_credentials';
+    
+    protected $fillable = [
+        'api_url',
+        'api_key',
+        'api_secret',
+        // Add other credential fields
+    ];
+
+    protected $hidden = [
+        'api_key',
+        'api_secret',
+    ];
+}
+```
+
+### 2. User Model
+Links internal users to external service user accounts.
+
+```php
+<?php
+
+namespace Modules\YourServiceNameService\Models;
+
+use Illuminate\Database\Eloquent\Model;
+use App\Models\User;
+
+class YourServiceNameUser extends Model
+{
+    protected $table = 'module_yourservicename_users';
+    
+    protected $fillable = [
+        'user_id',
+        'external_user_id',
+        'email',
+        'username',
+    ];
+
+    public function user()
+    {
+        return $this->belongsTo(User::class);
+    }
+}
+```
+
+### 3. Resource Model
+Represents the main resource (server, VPS, etc.) created for each service.
+
+```php
+<?php
+
+namespace Modules\YourServiceNameService\Models;
+
+use Illuminate\Database\Eloquent\Model;
+use App\Models\Service;
+
+class YourServiceNameResource extends Model
+{
+    protected $table = 'module_yourservicename_resources';
+    
+    protected $fillable = [
+        'service_id',
+        'module_yourservicename_user_id',
+        'external_resource_id',
+        'identifier',
+        'name',
+        'status',
+        'config',
+    ];
+
+    protected $casts = [
+        'config' => 'array',
+    ];
+
+    public function service()
+    {
+        return $this->belongsTo(Service::class);
+    }
+
+    public function serviceUser()
+    {
+        return $this->belongsTo(YourServiceNameUser::class, 'module_yourservicename_user_id');
+    }
+}
+```
+
+## Database Migrations
+
+Create migrations for your models:
+
+### 1. Credentials Table
+```php
+Schema::create('module_yourservicename_credentials', function (Blueprint $table) {
+    $table->id();
+    $table->string('api_url');
+    $table->string('api_key');
+    $table->string('api_secret')->nullable();
+    $table->timestamps();
+});
+```
+
+### 2. Users Table
+```php
+Schema::create('module_yourservicename_users', function (Blueprint $table) {
+    $table->id();
+    $table->foreignId('user_id')->constrained()->cascadeOnDelete();
+    $table->string('external_user_id');
+    $table->string('email');
+    $table->string('username')->nullable();
+    $table->timestamps();
+});
+```
+
+### 3. Resources Table
+```php
+Schema::create('module_yourservicename_resources', function (Blueprint $table) {
+    $table->id();
+    $table->foreignId('service_id')->constrained()->cascadeOnDelete();
+    $table->foreignId('module_yourservicename_user_id')->constrained('module_yourservicename_users')->cascadeOnDelete();
+    $table->string('external_resource_id');
+    $table->string('identifier')->nullable();
+    $table->string('name');
+    $table->string('status')->default('creating');
+    $table->json('config')->nullable();
+    $table->timestamps();
+});
+```
+
+## Service Provider Setup
+
+Create a service provider in `app/Providers/YourServiceNameServiceServiceProvider.php`:
+
+```php
+<?php
+
+namespace Modules\YourServiceNameService\Providers;
+
+use Illuminate\Support\Facades\Blade;
+use Illuminate\Support\ServiceProvider;
+use Nwidart\Modules\Traits\PathNamespace;
+use RecursiveDirectoryIterator;
+use RecursiveIteratorIterator;
+
+class YourServiceNameServiceServiceProvider extends ServiceProvider
+{
+    use PathNamespace;
+
+    protected string $name = 'YourServiceNameService';
+    protected string $nameLower = 'yourservicenameservice';
+
+    public function boot(): void
+    {
+        $this->registerCommands();
+        $this->registerCommandSchedules();
+        $this->registerTranslations();
+        $this->registerConfig();
+        $this->registerViews();
+        $this->loadMigrationsFrom(module_path($this->name, 'database/migrations'));
+    }
+
+    public function register(): void
+    {
+        $this->app->register(EventServiceProvider::class);
+        $this->app->register(RouteServiceProvider::class);
+    }
+
+    protected function registerCommands(): void
+    {
+        // Register any custom commands here
+    }
+
+    protected function registerCommandSchedules(): void
+    {
+        // Register command schedules here
+    }
+
+    public function registerTranslations(): void
+    {
+        $langPath = resource_path('lang/modules/' . $this->nameLower);
+
+        if (is_dir($langPath)) {
+            $this->loadTranslationsFrom($langPath, $this->nameLower);
+            $this->loadJsonTranslationsFrom($langPath);
+        } else {
+            $this->loadTranslationsFrom(module_path($this->name, 'lang'), $this->nameLower);
+            $this->loadJsonTranslationsFrom(module_path($this->name, 'lang'));
+        }
+    }
+
+    protected function registerConfig(): void
+    {
+        $configPath = module_path($this->name, config('modules.paths.generator.config.path'));
+
+        if (is_dir($configPath)) {
+            $iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($configPath));
+
+            foreach ($iterator as $file) {
+                if ($file->isFile() && $file->getExtension() === 'php') {
+                    $config = str_replace($configPath . DIRECTORY_SEPARATOR, '', $file->getPathname());
+                    $config_key = str_replace([DIRECTORY_SEPARATOR, '.php'], ['.', ''], $config);
+                    $segments = explode('.', $this->nameLower . '.' . $config_key);
+
+                    $normalized = [];
+                    foreach ($segments as $segment) {
+                        if (end($normalized) !== $segment) {
+                            $normalized[] = $segment;
+                        }
+                    }
+
+                    $key = ($config === 'config.php') ? $this->nameLower : implode('.', $normalized);
+
+                    $this->publishes([$file->getPathname() => config_path($config)], 'config');
+                    $this->merge_config_from($file->getPathname(), $key);
+                }
+            }
+        }
+    }
+
+    protected function merge_config_from(string $path, string $key): void
+    {
+        $existing = config($key, []);
+        $module_config = require $path;
+
+        config([$key => array_replace_recursive($existing, $module_config)]);
+    }
+
+    public function registerViews(): void
+    {
+        $viewPath = resource_path('views/modules/' . $this->nameLower);
+        $sourcePath = module_path($this->name, 'resources/views');
+
+        $this->publishes([$sourcePath => $viewPath], ['views', $this->nameLower . '-module-views']);
+
+        $this->loadViewsFrom(array_merge($this->getPublishableViewPaths(), [$sourcePath]), $this->nameLower);
+
+        Blade::componentNamespace(config('modules.namespace') . '\\' . $this->name . '\\View\\Components', $this->nameLower);
+    }
+
+    public function provides(): array
+    {
+        return [];
+    }
+
+    private function getPublishableViewPaths(): array
+    {
+        $paths = [];
+        foreach (config('view.paths') as $path) {
+            if (is_dir($path . '/modules/' . $this->nameLower)) {
+                $paths[] = $path . '/modules/' . $this->nameLower;
+            }
+        }
+
+        return $paths;
+    }
+}
+```
+
+## Module Configuration
+
+### module.json
+```json
+{
+    "name": "YourServiceNameService",
+    "alias": "yourservicenameservice",
+    "description": "Your service integration module",
+    "category": "service",
+    "keywords": [],
+    "priority": 0,
+    "providers": [
+        "Modules\\YourServiceNameService\\Providers\\YourServiceNameServiceServiceProvider"
+    ],
+    "files": [],
+    "hasSettings": true,
+    "settingsUrl": "/admin/yourservicename/settings",
+    "logo": "https://example.com/logo.png"
+}
+```
+
+## Implementation Steps
+
+### Step 1: Create Module Structure
+1. Create the module directory structure
+2. Set up `module.json` and `composer.json`
+3. Create the service provider
+
+### Step 2: Define Models and Migrations
+1. Create credential, user, and resource models
+2. Write corresponding database migrations
+3. Test migrations
+
+### Step 3: Implement Core Services
+1. Start with `YourService.php` for module configuration
+2. Implement `ModuleServiceActions.php` for resource creation
+3. Add `CancelService.php` for cleanup
+4. Create `RenewService.php` for billing
+5. Build `ServiceControlsService.php` for UI
+6. Set up `MarketCheckoutConfig.php` for forms
+
+### Step 4: Create Action Services
+1. Create services in `Services/Actions/` directory:
+   - `CreateServerService.php`
+   - `DeleteServerService.php`
+   - `SuspendServerService.php`
+   - `UnsuspendServerService.php`
+   - Other API interaction services (GetLocationsService, GetPlansService, etc.)
+
+### Step 5: Add Controllers and Routes
+1. Create controllers for admin settings
+2. Create controllers for user service management
+3. Define routes for both admin and user interfaces
+
+### Step 6: Frontend Integration
+1. Create the `resources/js/register.ts` file with module page registrations
+2. Create React/TypeScript components in `resources/js/Pages/` directory
+3. Ensure each component corresponds to tabs defined in `ServiceControlsService`
+4. Update `vite.config.js` to include the register.ts file
+5. Build and test frontend components
+
+### Step 7: Testing and Documentation
+1. Write unit tests
+2. Test integration with the main application
+3. Document API endpoints and configuration
+
+## Best Practices
+
+### Error Handling
+- Always wrap external API calls in try-catch blocks
+- Return consistent response formats: `['success' => bool, 'error' => string, 'data' => mixed]`
+- Log all errors with context for debugging
+
+### Database Transactions
+- Use database transactions for multi-step operations
+- Ensure data consistency between internal and external systems
+- Handle rollbacks properly
+
+### Configuration Management
+- Store sensitive data (API keys) securely
+- Use environment variables for configuration
+- Validate configuration before use
+
+### API Integration
+- Implement proper rate limiting
+- Handle API timeouts and failures gracefully
+- Cache frequently accessed data when appropriate
+
+### Security
+- Validate all user inputs
+- Sanitize data before external API calls
+- Implement proper authentication and authorization
+
+### Performance
+- Use queued jobs for long-running operations
+- Implement caching for expensive operations
+- Optimize database queries
+
+### Logging
+- Log all important operations
+- Include relevant context in log messages
+- Use appropriate log levels
+
+## Frontend Integration
+
+### Module Page Registration
+
+Each module needs to register its frontend pages with the main application. This is done through the `resources/js/register.ts` file.
+
+**Template for register.ts**:
+```typescript
+import { registerModulePages } from '../../../../resources/js/modulePages';
+
+registerModulePages({
+    'YourServiceNameService/Settings': () => import('./Pages/Settings.tsx'),
+    'YourServiceNameService/Dashboard': () => import('./Pages/Dashboard.tsx'),
+    'YourServiceNameService/Console': () => import('./Pages/Console.tsx'),
+    // Add more pages as needed based on your ServiceControlsService tabs
+});
+```
+
+**Key Points**:
+- The page keys should match the module name followed by the page name
+- Use dynamic imports (`() => import()`) for code splitting
+- Page names should correspond to the tabs defined in your `ServiceControlsService`
+- The paths are relative to the register.ts file location
+
+### Frontend Page Components
+
+Create React/TypeScript components in the `resources/js/Pages/` directory. Each component should correspond to a tab in your service controls.
+
+**Example Settings.tsx**:
+```tsx
+import React from 'react';
+
+interface SettingsProps {
+    service: any; // Define proper type based on your service structure
+}
+
+const Settings: React.FC<SettingsProps> = ({ service }) => {
+    return (
+        <div className="p-6">
+            <h1 className="text-2xl font-bold mb-4">Service Settings</h1>
+            <div className="bg-white rounded-lg shadow p-6">
+                <p>Settings content for {service.name}</p>
+                {/* Add your settings UI here */}
+            </div>
+        </div>
+    );
+};
+
+export default Settings;
+```
+
+**Example Dashboard.tsx**:
+```tsx
+import React from 'react';
+
+interface DashboardProps {
+    service: any;
+}
+
+const Dashboard: React.FC<DashboardProps> = ({ service }) => {
+    return (
+        <div className="p-6">
+            <h1 className="text-2xl font-bold mb-4">Service Dashboard</h1>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div className="bg-white rounded-lg shadow p-6">
+                    <h3 className="text-lg font-semibold mb-2">Status</h3>
+                    <p className="text-green-600">{service.status}</p>
+                </div>
+                <div className="bg-white rounded-lg shadow p-6">
+                    <h3 className="text-lg font-semibold mb-2">Resource ID</h3>
+                    <p>{service.config?.external_api_resource_id || 'N/A'}</p>
+                </div>
+                {/* Add more dashboard widgets */}
+            </div>
+        </div>
+    );
+};
+
+export default Dashboard;
+```
+
+
+This guide provides a comprehensive foundation for creating service modules. Each module will have specific requirements based on the external service's API and features, but this structure ensures consistency and maintainability across all service integrations.

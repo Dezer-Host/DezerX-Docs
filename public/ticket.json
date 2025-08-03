@@ -1,0 +1,1014 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Ticket Management API",
+    "description": "\nTicket Management API allows you to browse and manage support tickets in the system.\n\nThe API uses the following main variables:\n* **id**: the ticket identifier\n* **status**: ticket status (open, closed, resolved, answered, awaiting)\n* **user_id**: the user identifier\n* **department**: support department name\n\n## Authentication\n\nThis API requires Bearer token authentication. Include the token in the Authorization header:\n```\nAuthorization: Bearer YOUR_API_TOKEN\n```\n\n## Permissions\n\nEach endpoint requires specific permissions:\n* `tickets.index` - View tickets list\n* `tickets.show` - View specific ticket details\n* `tickets.create` - Create new tickets\n* `tickets.close` - Close tickets\n* `tickets.update` - Update ticket status\n* `tickets.reply` - Reply to tickets (send messages)\n\n## Rate Limiting\n\nAPI requests are rate limited. Please respect the limits to ensure service availability.\n",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "https://api.example.com/api/application",
+      "description": "Production API Server"
+    }
+  ],
+  "paths": {
+    "/api/application/tickets": {
+      "get": {
+        "tags": ["Tickets"],
+        "summary": "Get All Tickets",
+        "description": "Retrieve a paginated list of all tickets with optional filtering by search term and status",
+        "operationId": "get_tickets_list",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "per_page",
+            "in": "query",
+            "description": "Number of tickets per page",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 15,
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "description": "Search in ticket name, description, or user details",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "description": "Filter by ticket status",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["open", "closed", "resolved", "answered", "awaiting"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Tickets retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TicketsListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      },
+      "post": {
+        "tags": ["Tickets"],
+        "summary": "Create New Ticket",
+        "description": "Create a new support ticket for a user",
+        "operationId": "create_ticket",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateTicketRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Ticket created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TicketCreateResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/api/application/tickets/{id}": {
+      "get": {
+        "tags": ["Tickets"],
+        "summary": "Get Specific Ticket",
+        "description": "Retrieve details of a specific ticket including messages and related service",
+        "operationId": "get_ticket_details",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Ticket ID",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Ticket retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TicketResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/application/tickets/{id}/close": {
+      "post": {
+        "tags": ["Tickets"],
+        "summary": "Close Ticket",
+        "description": "Close a specific ticket. This sets the ticket status to 'closed'",
+        "operationId": "close_ticket",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Ticket ID",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Ticket closed successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TicketCloseResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestAlreadyClosed"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/application/tickets/{id}/status": {
+      "put": {
+        "tags": ["Tickets"],
+        "summary": "Update Ticket Status",
+        "description": "Update the status of a specific ticket",
+        "operationId": "update_ticket_status",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Ticket ID",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateTicketStatusRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Ticket status updated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TicketStatusUpdateResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestSameStatus"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    },
+    "/api/application/tickets/{id}/reply": {
+      "post": {
+        "tags": ["Tickets"],
+        "summary": "Reply to Ticket (Send Message)",
+        "description": "Send a message/reply to a specific ticket",
+        "operationId": "reply_to_ticket",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Ticket ID",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TicketReplyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Reply sent successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TicketReplyResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Bearer token authentication"
+      }
+    },
+    "schemas": {
+      "User": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 5
+          },
+          "name": {
+            "type": "string",
+            "example": "John Doe"
+          },
+          "email": {
+            "type": "string",
+            "example": "user@example.com"
+          }
+        }
+      },
+      "Service": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 3
+          },
+          "service_name": {
+            "type": "string",
+            "example": "Example Service"
+          },
+          "status": {
+            "type": "string",
+            "example": "active"
+          }
+        }
+      },
+      "Message": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 1
+          },
+          "ticket_id": {
+            "type": "integer",
+            "example": 1
+          },
+          "user_id": {
+            "type": "integer",
+            "example": 5
+          },
+          "message": {
+            "type": "string",
+            "example": "I'm having trouble with my account access"
+          },
+          "is_staff": {
+            "type": "boolean",
+            "example": false
+          },
+          "attachments": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "example": null
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2024-01-15T10:30:00.000000Z"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2024-01-15T10:30:00.000000Z"
+          },
+          "user_display_name": {
+            "type": "string",
+            "example": "John Doe"
+          },
+          "user": {
+            "$ref": "#/components/schemas/User"
+          }
+        }
+      },
+      "Ticket": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 1
+          },
+          "name": {
+            "type": "string",
+            "example": "Account Access Issue"
+          },
+          "description": {
+            "type": "string",
+            "example": "Cannot access my account dashboard"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["open", "closed", "resolved", "answered", "awaiting"],
+            "example": "open"
+          },
+          "department": {
+            "type": "string",
+            "example": "Support"
+          },
+          "related_service_id": {
+            "type": "integer",
+            "nullable": true,
+            "example": 3
+          },
+          "user_id": {
+            "type": "integer",
+            "example": 5
+          },
+          "extra_user_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "nullable": true,
+            "example": null
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2024-01-15T10:30:00.000000Z"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2024-01-15T10:30:00.000000Z"
+          },
+          "user_display_name": {
+            "type": "string",
+            "example": "John Doe"
+          },
+          "user": {
+            "$ref": "#/components/schemas/User"
+          },
+          "service": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Service"
+              }
+            ],
+            "nullable": true
+          },
+          "messages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Message"
+            }
+          }
+        }
+      },
+      "TicketBasic": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 1
+          },
+          "name": {
+            "type": "string",
+            "example": "Account Access Issue"
+          },
+          "description": {
+            "type": "string",
+            "example": "Cannot login to my account"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["open", "closed", "resolved", "answered", "awaiting"],
+            "example": "open"
+          },
+          "department": {
+            "type": "string",
+            "example": "Support"
+          },
+          "related_service_id": {
+            "type": "integer",
+            "nullable": true,
+            "example": null
+          },
+          "user_id": {
+            "type": "integer",
+            "example": 5
+          },
+          "extra_user_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "nullable": true,
+            "example": null
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2024-01-15T10:30:00.000000Z"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2024-01-15T10:30:00.000000Z"
+          },
+          "user_display_name": {
+            "type": "string",
+            "example": "John Doe"
+          },
+          "user": {
+            "$ref": "#/components/schemas/User"
+          },
+          "messages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Message"
+            }
+          }
+        }
+      },
+      "CreateTicketRequest": {
+        "type": "object",
+        "required": ["name", "description", "department", "user_id"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 255,
+            "example": "Login Issue"
+          },
+          "description": {
+            "type": "string",
+            "example": "I cannot access my account dashboard. Getting error message when trying to log in"
+          },
+          "department": {
+            "type": "string",
+            "example": "Technical Support"
+          },
+          "user_id": {
+            "type": "integer",
+            "example": 5
+          },
+          "related_service_id": {
+            "type": "integer",
+            "nullable": true,
+            "example": 3
+          }
+        }
+      },
+      "UpdateTicketStatusRequest": {
+        "type": "object",
+        "required": ["status"],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": ["open", "closed", "resolved", "answered", "awaiting"],
+            "example": "resolved"
+          }
+        }
+      },
+      "TicketReplyRequest": {
+        "type": "object",
+        "required": ["message", "user_id", "is_staff"],
+        "properties": {
+          "message": {
+            "type": "string",
+            "example": "Thank you for contacting support. We are looking into this issue and will update you shortly."
+          },
+          "user_id": {
+            "type": "integer",
+            "example": 1
+          },
+          "is_staff": {
+            "type": "boolean",
+            "example": true
+          },
+          "attachments": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": []
+          }
+        }
+      },
+      "PaginationMeta": {
+        "type": "object",
+        "properties": {
+          "current_page": {
+            "type": "integer",
+            "example": 1
+          },
+          "first_page_url": {
+            "type": "string",
+            "example": "https://api.example.com/api/application/tickets?page=1"
+          },
+          "from": {
+            "type": "integer",
+            "example": 1
+          },
+          "last_page": {
+            "type": "integer",
+            "example": 1
+          },
+          "last_page_url": {
+            "type": "string",
+            "example": "https://api.example.com/api/application/tickets?page=1"
+          },
+          "links": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "url": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "label": {
+                  "type": "string"
+                },
+                "active": {
+                  "type": "boolean"
+                }
+              }
+            }
+          },
+          "next_page_url": {
+            "type": "string",
+            "nullable": true,
+            "example": null
+          },
+          "path": {
+            "type": "string",
+            "example": "https://api.example.com/api/application/tickets"
+          },
+          "per_page": {
+            "type": "integer",
+            "example": 15
+          },
+          "prev_page_url": {
+            "type": "string",
+            "nullable": true,
+            "example": null
+          },
+          "to": {
+            "type": "integer",
+            "example": 1
+          },
+          "total": {
+            "type": "integer",
+            "example": 1
+          }
+        }
+      },
+      "PaginatedTickets": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/PaginationMeta"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/TicketBasic"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "TicketsListResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/PaginatedTickets"
+          }
+        }
+      },
+      "TicketResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/Ticket"
+          }
+        }
+      },
+      "TicketCreateResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": true
+          },
+          "message": {
+            "type": "string",
+            "example": "Ticket created successfully"
+          },
+          "data": {
+            "$ref": "#/components/schemas/Ticket"
+          }
+        }
+      },
+      "TicketCloseResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": true
+          },
+          "message": {
+            "type": "string",
+            "example": "Ticket closed successfully"
+          },
+          "data": {
+            "$ref": "#/components/schemas/Ticket"
+          }
+        }
+      },
+      "TicketStatusUpdateResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": true
+          },
+          "message": {
+            "type": "string",
+            "example": "Ticket status updated successfully"
+          },
+          "data": {
+            "$ref": "#/components/schemas/Ticket"
+          }
+        }
+      },
+      "TicketReplyResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": true
+          },
+          "message": {
+            "type": "string",
+            "example": "Reply sent successfully"
+          },
+          "data": {
+            "$ref": "#/components/schemas/Message"
+          }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": false
+          },
+          "message": {
+            "type": "string",
+            "example": "An error occurred"
+          },
+          "errors": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "ValidationError": {
+        "type": "object",
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          }
+        },
+        "required": ["loc", "msg", "type"]
+      }
+    },
+    "responses": {
+      "Unauthorized": {
+        "description": "Authentication required",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "error": "Unauthorized",
+              "message": "Bearer token required"
+            }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "Access forbidden or ticket system disabled",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "examples": {
+              "insufficient_permissions": {
+                "summary": "Insufficient permissions",
+                "value": {
+                  "error": "Forbidden",
+                  "message": "Insufficient permissions for this action"
+                }
+              },
+              "ticket_system_disabled": {
+                "summary": "Ticket system disabled",
+                "value": {
+                  "success": false,
+                  "message": "Ticket system is currently disabled"
+                }
+              }
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "Ticket not found",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "success": false,
+              "message": "Ticket not found"
+            }
+          }
+        }
+      },
+      "BadRequest": {
+        "description": "Bad request",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "success": false,
+              "message": "Bad request"
+            }
+          }
+        }
+      },
+      "BadRequestAlreadyClosed": {
+        "description": "Ticket is already closed",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "success": false,
+              "message": "Ticket is already closed"
+            }
+          }
+        }
+      },
+      "BadRequestSameStatus": {
+        "description": "Ticket status is already the same",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "success": false,
+              "message": "Ticket status is already resolved"
+            }
+          }
+        }
+      },
+      "ValidationError": {
+        "description": "Validation error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "examples": {
+              "general_validation": {
+                "summary": "General validation error",
+                "value": {
+                  "success": false,
+                  "message": "Validation failed",
+                  "errors": {
+                    "name": ["The name field is required."],
+                    "department": ["The selected department is invalid."],
+                    "user_id": ["The selected user id is invalid."],
+                    "status": ["The selected status is invalid."],
+                    "message": ["The message field is required."],
+                    "is_staff": ["The is staff field is required."]
+                  }
+                }
+              },
+              "invalid_department": {
+                "summary": "Invalid department",
+                "value": {
+                  "success": false,
+                  "message": "Invalid department specified"
+                }
+              }
+            }
+          }
+        }
+      },
+      "InternalServerError": {
+        "description": "Internal server error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "success": false,
+              "message": "Error creating ticket: Database connection failed"
+            }
+          }
+        }
+      }
+    }
+  }
+}

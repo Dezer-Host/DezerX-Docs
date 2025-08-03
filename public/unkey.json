@@ -1,0 +1,880 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Service Management API",
+    "description": "\nService Management API allows you to manage hosting services including suspension, termination, and updates.\n\nThe API uses the following main variables:\n* **id**: the service identifier\n* **status**: service status (active, suspended, terminated, pending)\n* **owner_id**: the service owner's user ID\n\n## Authentication\n\nThis API requires Bearer token authentication. Include the token in the Authorization header:\n```\nAuthorization: Bearer YOUR_API_TOKEN\n```\n\n## Rate Limiting\n\nAPI requests are rate limited. Please respect the limits to ensure service availability.\n",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "https://api.example.com",
+      "description": "Do not use ( THIS IS EXAMPLE )"
+    }
+  ],
+  "paths": {
+    "/api/application/services": {
+      "get": {
+        "tags": ["Services"],
+        "summary": "Get Services List",
+        "description": "Retrieve a paginated list of services with optional filtering by search term and status",
+        "operationId": "get_services_list",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "per_page",
+            "in": "query",
+            "description": "Number of services per page",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 15,
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "description": "Search term for service name, product name, or owner details",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "description": "Filter by service status",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["active", "suspended", "terminated", "pending"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Services retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServicesListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    },
+    "/api/application/services/{id}": {
+      "get": {
+        "tags": ["Services"],
+        "summary": "Get Service Details",
+        "description": "Retrieve detailed information about a specific service by its ID",
+        "operationId": "get_service_details",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Service ID",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Service retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/application/services/{id}/suspend": {
+      "post": {
+        "tags": ["Service Actions"],
+        "summary": "Suspend Service",
+        "description": "Suspend a service and update its status to suspended. This action will also trigger module-specific suspension if applicable.",
+        "operationId": "suspend_service",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Service ID",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Service suspended successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceActionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/api/application/services/{id}/unsuspend": {
+      "post": {
+        "tags": ["Service Actions"],
+        "summary": "Unsuspend Service",
+        "description": "Unsuspend a service and set its status back to active. This action will also trigger module-specific unsuspension if applicable.",
+        "operationId": "unsuspend_service",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Service ID",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Service unsuspended successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceActionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/api/application/services/{id}/terminate": {
+      "post": {
+        "tags": ["Service Actions"],
+        "summary": "Terminate Service",
+        "description": "Terminate a service permanently. If the service is already terminated, it will be deleted from the system. This action cannot be undone.",
+        "operationId": "terminate_service",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Service ID",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Service terminated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceActionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/api/application/services/{id}/pricing": {
+      "put": {
+        "tags": ["Service Updates"],
+        "summary": "Update Service Pricing",
+        "description": "Update the price of a service. The new price will be applied immediately.",
+        "operationId": "update_service_pricing",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Service ID",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PricingUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Service pricing updated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceActionResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    },
+    "/api/application/services/{id}/due-date": {
+      "put": {
+        "tags": ["Service Updates"],
+        "summary": "Update Service Due Date",
+        "description": "Update the due date of a service. The new due date must be in the future.",
+        "operationId": "update_service_due_date",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Service ID",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DueDateUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Service due date updated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceActionResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    },
+    "/api/application/services/{id}/owner": {
+      "put": {
+        "tags": ["Service Updates"],
+        "summary": "Update Service Owner",
+        "description": "Transfer service ownership to another user. The new owner must be a valid user in the system.",
+        "operationId": "update_service_owner",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Service ID",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OwnerUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Service owner updated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceActionResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Bearer token authentication"
+      }
+    },
+    "schemas": {
+      "Service": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 1
+          },
+          "service_name": {
+            "type": "string",
+            "example": "Web Hosting Premium"
+          },
+          "product_id": {
+            "type": "integer",
+            "example": 1
+          },
+          "category_id": {
+            "type": "integer",
+            "example": 1
+          },
+          "owner_id": {
+            "type": "integer",
+            "example": 1
+          },
+          "extra_owners": {
+            "type": "string",
+            "nullable": true,
+            "example": null
+          },
+          "price": {
+            "type": "string",
+            "example": "25.00"
+          },
+          "original_price": {
+            "type": "string",
+            "nullable": true,
+            "example": null
+          },
+          "coupon_id": {
+            "type": "integer",
+            "nullable": true,
+            "example": null
+          },
+          "billing_cycle": {
+            "type": "string",
+            "enum": ["monthly", "quarterly", "semi-annually", "yearly", "biennially", "triennially"],
+            "example": "yearly"
+          },
+          "due_date": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2024-12-31T23:59:59.000000Z"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["active", "suspended", "terminated", "pending"],
+            "example": "active"
+          },
+          "module": {
+            "type": "string",
+            "nullable": true,
+            "example": "HostingModule"
+          },
+          "config": {
+            "type": "object",
+            "nullable": true,
+            "description": "Module-specific configuration data",
+            "example": {
+              "domain": "example.com",
+              "created_at": "2024-01-01T00:00:00.000000Z",
+              "license_id": 1,
+              "license_key": "LIC-XXXXXXXX-XXXXXXXX-XXXXXXXX",
+              "last_rotated": "2024-01-01T00:00:00.000000Z"
+            }
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2024-01-01T00:00:00.000000Z"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2024-01-01T00:00:00.000000Z"
+          },
+          "last_reminded": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "example": null
+          },
+          "owner": {
+            "$ref": "#/components/schemas/User"
+          },
+          "product": {
+            "$ref": "#/components/schemas/Product"
+          },
+          "category": {
+            "$ref": "#/components/schemas/Category"
+          }
+        }
+      },
+      "User": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 1
+          },
+          "name": {
+            "type": "string",
+            "example": "user@example.com"
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "example": "user@example.com"
+          }
+        }
+      },
+      "Product": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 1
+          },
+          "name": {
+            "type": "string",
+            "example": "Premium Hosting"
+          }
+        }
+      },
+      "Category": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 1
+          },
+          "name": {
+            "type": "string",
+            "example": "Web Hosting"
+          }
+        }
+      },
+      "PaginatedServices": {
+        "type": "object",
+        "properties": {
+          "current_page": {
+            "type": "integer",
+            "example": 1
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Service"
+            }
+          },
+          "first_page_url": {
+            "type": "string",
+            "example": "https://api.example.com/api/application/services?page=1"
+          },
+          "from": {
+            "type": "integer",
+            "example": 1
+          },
+          "last_page": {
+            "type": "integer",
+            "example": 10
+          },
+          "last_page_url": {
+            "type": "string",
+            "example": "https://api.example.com/api/application/services?page=10"
+          },
+          "links": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "url": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "label": {
+                  "type": "string"
+                },
+                "active": {
+                  "type": "boolean"
+                }
+              }
+            }
+          },
+          "next_page_url": {
+            "type": "string",
+            "nullable": true,
+            "example": "https://api.example.com/api/application/services?page=2"
+          },
+          "path": {
+            "type": "string",
+            "example": "https://api.example.com/api/application/services"
+          },
+          "per_page": {
+            "type": "integer",
+            "example": 15
+          },
+          "prev_page_url": {
+            "type": "string",
+            "nullable": true,
+            "example": null
+          },
+          "to": {
+            "type": "integer",
+            "example": 15
+          },
+          "total": {
+            "type": "integer",
+            "example": 150
+          }
+        }
+      },
+      "ServicesListResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/PaginatedServices"
+          }
+        }
+      },
+      "ServiceResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/Service"
+          }
+        }
+      },
+      "ServiceActionResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": true
+          },
+          "message": {
+            "type": "string",
+            "example": "Service action completed successfully"
+          },
+          "data": {
+            "$ref": "#/components/schemas/Service"
+          }
+        }
+      },
+      "PricingUpdateRequest": {
+        "type": "object",
+        "required": ["price"],
+        "properties": {
+          "price": {
+            "type": "string",
+            "description": "New price for the service",
+            "example": "29.99"
+          }
+        }
+      },
+      "DueDateUpdateRequest": {
+        "type": "object",
+        "required": ["due_date"],
+        "properties": {
+          "due_date": {
+            "type": "string",
+            "format": "date-time",
+            "description": "New due date for the service (must be after today)",
+            "example": "2024-12-31T23:59:59.000000Z"
+          }
+        }
+      },
+      "OwnerUpdateRequest": {
+        "type": "object",
+        "required": ["user_id"],
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "description": "ID of the new owner (must exist in users table)",
+            "example": 123
+          }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": false
+          },
+          "message": {
+            "type": "string",
+            "example": "An error occurred"
+          },
+          "errors": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "ValidationError": {
+        "type": "object",
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          }
+        },
+        "type": "object",
+        "required": ["loc", "msg", "type"],
+        "title": "ValidationError"
+      }
+    },
+    "responses": {
+      "Unauthorized": {
+        "description": "Unauthorized - Invalid or missing Bearer token",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "success": false,
+              "message": "Unauthorized"
+            }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "Forbidden - Insufficient permissions",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "success": false,
+              "message": "Insufficient permissions"
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "Service not found",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "success": false,
+              "message": "Service not found"
+            }
+          }
+        }
+      },
+      "BadRequest": {
+        "description": "Bad request - Operation failed",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "success": false,
+              "message": "Failed to perform service action"
+            }
+          }
+        }
+      },
+      "ValidationError": {
+        "description": "Validation failed",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "success": false,
+              "message": "Validation failed",
+              "errors": {
+                "price": ["The price field is required."]
+              }
+            }
+          }
+        }
+      },
+      "InternalServerError": {
+        "description": "Internal server error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "success": false,
+              "message": "An internal server error occurred"
+            }
+          }
+        }
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "Services",
+      "description": "Service discovery and basic information"
+    },
+    {
+      "name": "Service Actions",
+      "description": "Service lifecycle management (suspend, unsuspend, terminate)"
+    },
+    {
+      "name": "Service Updates",
+      "description": "Service property updates (pricing, due date, ownership)"
+    }
+  ]
+}

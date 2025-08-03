@@ -1,0 +1,778 @@
+---
+title: How to make Gateway
+description: How to make a Gateway in DezerX!
+icon: "CreditCardIcon"
+full: true
+---
+
+# Payment Gateway Development Guide
+
+This guide explains how to create payment gateway modules (like StripeGateway, PayPalIPNGateway, etc.) for processing payments in the application.
+
+## Quick Start - Payment Gateway
+
+### Creating a New Payment Gateway Module
+
+Use Laravel nwidart's module generator to create your payment gateway module:
+
+```bash
+php artisan module:make YourGatewayNameGateway
+```
+
+**Important**: Payment gateway module names must always end with "Gateway" (e.g., StripeGateway, PayPalIPNGateway, RazorpayGateway).
+
+### Creating the Payment Gateway Structure
+
+After creating the module, you need to create the payment gateway structure:
+
+```bash
+# Navigate to your module directory
+cd Modules/YourGatewayNameGateway
+
+# Create the Services directory in app/Services (not root Services)
+mkdir -p app/Services
+mkdir -p app/Models
+mkdir -p app/Interfaces
+
+# Create the payment service file
+touch app/Services/YourGatewayNameGatewayPaymentService.php
+
+# Create the credentials model
+touch app/Models/YourGatewayNameCredentials.php
+
+# Create the interface (optional - can use the main app interface)
+touch app/Interfaces/PaymentGatewayInterface.php
+```
+
+## Payment Gateway Module Structure
+
+A payment gateway module follows this directory structure:
+
+```
+Modules/YourGatewayNameGateway/
+├── app/
+│   ├── Http/Controllers/
+│   │   ├── PaymentController.php
+│   │   ├── SettingsController.php
+│   │   └── YourGatewayNameGatewayController.php
+│   ├── Interfaces/
+│   │   └── PaymentGatewayInterface.php
+│   ├── Models/
+│   │   └── YourGatewayNameCredentials.php
+│   ├── Providers/
+│   │   ├── EventServiceProvider.php
+│   │   ├── RouteServiceProvider.php
+│   │   └── YourGatewayNameGatewayServiceProvider.php
+│   └── Services/
+│       └── YourGatewayNameGatewayPaymentService.php
+├── config/
+├── database/
+│   └── migrations/
+├── resources/
+├── routes/
+├── tests/
+├── composer.json
+├── module.json
+├── package.json
+└── vite.config.js
+```
+
+## Core Payment Gateway Files
+
+### 1. Payment Service (app/Services/YourGatewayNameGatewayPaymentService.php)
+
+**Purpose**: Main payment processing service that handles payment creation, execution, and validation.
+
+**Must extend**: `App\Services\Payment\BasePaymentService`
+
+**Required Methods**:
+- `createPayment(float $amount, string $currency, array $metadata = []): array`
+- `executePayment(string $paymentId, string $payerId = null): bool`
+- `getPaymentDetails(string $paymentId): array`
+- `getConfig(): array`
+- `validateNotification(array $data): bool`
+- `getGatewayName(): string` (protected)
+
+**Template**:
+```php
+<?php
+
+namespace Modules\YourGatewayNameGateway\Services;
+
+use App\Services\Payment\BasePaymentService;
+use Modules\YourGatewayNameGateway\Models\YourGatewayNameCredentials;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
+
+class YourGatewayNameGatewayPaymentService extends BasePaymentService
+{
+    protected $credentials;
+    protected $apiKey;
+    protected $baseUrl = 'https://api.yourgateway.com/v1';
+
+    public function __construct()
+    {
+        parent::__construct();
+
+        $this->credentials = YourGatewayNameCredentials::first();
+        if (!$this->credentials) {
+            throw new \Exception('YourGatewayName credentials not found');
+        }
+
+        $this->apiKey = $this->credentials->api_key;
+        if (!$this->apiKey) {
+            throw new \Exception('YourGatewayName API key not configured');
+        }
+    }
+
+    public function createPayment(float $amount, string $currency, array $metadata = []): array
+    {
+        try {
+            Log::info('YourGatewayName createPayment called', [
+                'amount' => $amount,
+                'currency' => $currency,
+                'metadata' => $metadata
+            ]);
+
+            if (empty($amount) || $amount <= 0) {
+                throw new \Exception('Invalid payment amount');
+            }
+
+            $paymentId = 'gateway_' . Str::random(32);
+            
+            // Prepare payment data for your gateway
+            $paymentData = [
+                'amount' => $amount,
+                'currency' => strtoupper($currency),
+                'description' => $metadata['description'] ?? 'Service Purchase',
+                'return_url' => route('yourgateway.payment.success', ['token' => $paymentId]),
+                'cancel_url' => route('yourgateway.payment.cancel'),
+                'webhook_url' => route('yourgateway.payment.webhook'),
+                'metadata' => [
+                    'payment_id' => $paymentId,
+                    'service_id' => $metadata['service_id'] ?? null,
+                    'user_id' => $metadata['user_id'] ?? null,
+                ]
+            ];
+
+            // Make API request to your payment gateway
+            $response = Http::withHeaders([
+                'Authorization' => 'Bearer ' . $this->apiKey,
+                'Accept' => 'application/json',
+                'Content-Type' => 'application/json',
+            ])->post($this->baseUrl . '/payments', $paymentData);
+
+            if ($response->failed()) {
+                throw new \Exception('Failed to create payment: ' . $response->body());
+            }
+
+            $responseData = $response->json();
+
+            Log::info('YourGatewayName payment created successfully', [
+                'payment_id' => $paymentId,
+                'gateway_payment_id' => $responseData['id'] ?? null,
+                'amount' => $amount,
+                'currency' => $currency
+            ]);
+
+            return [
+                'payment_id' => $paymentId,
+                'approval_url' => $responseData['approval_url'] ?? $responseData['checkout_url'],
+                'status' => 'created'
+            ];
+
+        } catch (\Exception $e) {
+            Log::error('YourGatewayName payment creation error', [
+                'error' => $e->getMessage(),
+                'amount' => $amount,
+                'currency' => $currency
+            ]);
+            throw $e;
+        }
+    }
+
+    public function executePayment(string $paymentId, string $payerId = null): bool
+    {
+        try {
+            Log::info('YourGatewayName executePayment called', [
+                'payment_id' => $paymentId,
+                'payer_id' => $payerId
+            ]);
+
+            // Get payment token to verify
+            $paymentToken = $this->getPaymentToken($paymentId, auth()->id());
+
+            if (!$paymentToken) {
+                Log::error('YourGatewayName executePayment failed: payment token not found', [
+                    'payment_id' => $paymentId,
+                    'user_id' => auth()->id()
+                ]);
+                return false;
+            }
+
+            // Verify payment status with your gateway
+            $paymentDetails = $this->getPaymentDetails($paymentId);
+            
+            return $paymentDetails['status'] === 'completed' || $paymentDetails['status'] === 'paid';
+
+        } catch (\Exception $e) {
+            Log::error('YourGatewayName payment execution exception', [
+                'payment_id' => $paymentId,
+                'error' => $e->getMessage()
+            ]);
+            return false;
+        }
+    }
+
+    public function getPaymentDetails(string $paymentId): array
+    {
+        try {
+            $paymentToken = $this->getPaymentToken($paymentId, auth()->id());
+
+            if (!$paymentToken) {
+                throw new \Exception('Payment details not found');
+            }
+
+            // You might also want to fetch from your gateway API
+            // $response = Http::withHeaders([
+            //     'Authorization' => 'Bearer ' . $this->apiKey,
+            // ])->get($this->baseUrl . '/payments/' . $gatewayPaymentId);
+
+            return [
+                'id' => $paymentToken->token,
+                'status' => $paymentToken->status ?? 'pending',
+                'amount' => [
+                    'value' => $paymentToken->amount ?? 0,
+                    'currency_code' => $paymentToken->currency ?? 'USD'
+                ],
+                'metadata' => $paymentToken->metadata ?? []
+            ];
+        } catch (\Exception $e) {
+            Log::error('YourGatewayName payment details retrieval error', [
+                'payment_id' => $paymentId,
+                'error' => $e->getMessage()
+            ]);
+            throw $e;
+        }
+    }
+
+    public function getConfig(): array
+    {
+        $moduleConfig = json_decode(file_get_contents(__DIR__ . '/../../module.json'), true);
+
+        return [
+            'name' => 'YourGatewayName',
+            'display_name' => 'Your Gateway Name',
+            'description' => $moduleConfig['description'] ?? 'Secure payments through Your Gateway Name',
+            'logo' => $moduleConfig['logo'] ?? '/images/gateways/yourgateway-logo.png',
+            'enabled' => !empty($this->credentials->api_key)
+        ];
+    }
+
+    public function validateNotification(array $data): bool
+    {
+        try {
+            Log::info('YourGatewayName notification validation started', [
+                'data_keys' => array_keys($data)
+            ]);
+
+            // Implement your gateway's webhook validation logic
+            // This might include signature verification, required fields check, etc.
+            
+            $requiredFields = ['payment_id', 'status', 'amount'];
+            foreach ($requiredFields as $field) {
+                if (!isset($data[$field]) || empty($data[$field])) {
+                    Log::error('YourGatewayName validation failed: missing required field', [
+                        'missing_field' => $field
+                    ]);
+                    return false;
+                }
+            }
+
+            // Add signature verification if your gateway supports it
+            // if (!$this->verifyWebhookSignature($data)) {
+            //     return false;
+            // }
+
+            Log::info('YourGatewayName notification validation successful');
+            return true;
+
+        } catch (\Exception $e) {
+            Log::error('YourGatewayName notification validation exception', [
+                'error' => $e->getMessage()
+            ]);
+            return false;
+        }
+    }
+
+    /**
+     * Process webhook notification (if your gateway uses webhooks)
+     */
+    public function processWebhookNotification(array $webhookData): bool
+    {
+        try {
+            Log::info('YourGatewayName processing webhook notification', [
+                'transaction_id' => $webhookData['transaction_id'] ?? 'unknown',
+                'status' => $webhookData['status'] ?? 'unknown'
+            ]);
+
+            if (!$this->validateNotification($webhookData)) {
+                return false;
+            }
+
+            // Check if payment is completed/successful
+            if (($webhookData['status'] ?? '') !== 'completed') {
+                Log::info('YourGatewayName webhook payment not completed, skipping processing', [
+                    'status' => $webhookData['status'] ?? 'unknown'
+                ]);
+                return true;
+            }
+
+            $paymentId = $webhookData['payment_id'] ?? $webhookData['custom'] ?? null;
+            if (!$paymentId) {
+                Log::error('YourGatewayName webhook missing payment ID');
+                return false;
+            }
+
+            // Find payment token
+            $paymentToken = \App\Models\PaymentToken::where('token', $paymentId)
+                ->where('payment_method', $this->getGatewayName())
+                ->valid()
+                ->first();
+
+            if (!$paymentToken) {
+                Log::error('YourGatewayName webhook payment token not found', ['payment_id' => $paymentId]);
+                return false;
+            }
+
+            if ($paymentToken->status === 'completed') {
+                Log::warning('YourGatewayName webhook payment already processed', ['payment_id' => $paymentId]);
+                return true;
+            }
+
+            // Validate amounts and currency
+            $expectedAmount = number_format((float) $paymentToken->amount, 2, '.', '');
+            $receivedAmount = number_format((float) ($webhookData['amount'] ?? 0), 2, '.', '');
+
+            if ($expectedAmount !== $receivedAmount || $paymentToken->currency !== ($webhookData['currency'] ?? '')) {
+                Log::error('YourGatewayName webhook amount or currency mismatch', [
+                    'expected_amount' => $expectedAmount,
+                    'received_amount' => $receivedAmount,
+                    'expected_currency' => $paymentToken->currency,
+                    'received_currency' => $webhookData['currency'] ?? 'unknown'
+                ]);
+                return false;
+            }
+
+            // Process successful payment
+            $paymentData = [
+                'service_id' => $paymentToken->service_id,
+                'user_id' => $paymentToken->user_id,
+                'type' => $paymentToken->type,
+                'amount' => $paymentToken->amount,
+                'currency' => $paymentToken->currency,
+                'user_config' => $paymentToken->metadata['user_config'] ?? [],
+                'metadata' => $paymentToken->metadata,
+                'invoice_id' => $paymentToken->invoice_id,
+                'transaction_id' => $webhookData['transaction_id'] ?? null,
+                'payment_method' => $this->getGatewayName()
+            ];
+
+            $result = $this->handlePaymentSuccess($paymentId, $paymentData);
+            $paymentToken->update([
+                'status' => 'completed',
+                'processed_at' => now()
+            ]);
+
+            Log::info('YourGatewayName webhook payment processed successfully', [
+                'payment_id' => $paymentId,
+                'transaction_id' => $webhookData['transaction_id'] ?? null
+            ]);
+
+            return true;
+        } catch (\Exception $e) {
+            Log::error('YourGatewayName webhook payment processing failed', [
+                'payment_id' => $paymentId ?? 'unknown',
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return false;
+        }
+    }
+
+    protected function getGatewayName(): string
+    {
+        return 'YourGatewayName';
+    }
+}
+```
+
+### 2. Credentials Model (app/Models/YourGatewayNameCredentials.php)
+
+**Purpose**: Stores API credentials and configuration for the payment gateway.
+
+**Template**:
+```php
+<?php
+
+namespace Modules\YourGatewayNameGateway\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+class YourGatewayNameCredentials extends Model
+{
+    protected $table = 'yourgatewayname_credentials';
+    
+    protected $fillable = [
+        'api_key',
+        'api_secret',
+        'webhook_secret',
+        'mode', // 'sandbox' or 'live'
+        'merchant_id',
+        // Add other credential fields specific to your gateway
+    ];
+
+    protected $hidden = [
+        'api_key',
+        'api_secret',
+        'webhook_secret',
+    ];
+
+    protected $casts = [
+        'settings' => 'array',
+    ];
+}
+```
+
+### 3. Payment Gateway Interface (app/Interfaces/PaymentGatewayInterface.php)
+
+**Purpose**: Defines the contract for payment gateway services (optional - you can use the main app interface).
+
+**Template**:
+```php
+<?php
+
+namespace Modules\YourGatewayNameGateway\Interfaces;
+
+use App\Models\PaymentToken;
+
+interface PaymentGatewayInterface
+{
+    public function createPayment(float $amount, string $currency, array $metadata = []): array;
+    public function executePayment(string $paymentId, string $payerId = null): bool;
+    public function getPaymentDetails(string $paymentId): array;
+    public function getConfig(): array;
+    public function validateNotification(array $data): bool;
+    public function getPaymentToken(string $paymentId, int $userId): ?PaymentToken;
+    public function createPaymentToken(array $tokenData): PaymentToken;
+    public function handlePaymentSuccess(string $paymentId, array $paymentData): array;
+}
+```
+
+## Database Migration
+
+Create a migration for storing gateway credentials:
+
+```php
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::create('yourgatewayname_credentials', function (Blueprint $table) {
+            $table->id();
+            $table->string('api_key');
+            $table->string('api_secret')->nullable();
+            $table->string('webhook_secret')->nullable();
+            $table->enum('mode', ['sandbox', 'live'])->default('sandbox');
+            $table->string('merchant_id')->nullable();
+            $table->json('settings')->nullable();
+            $table->timestamps();
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::dropIfExists('yourgatewayname_credentials');
+    }
+};
+```
+
+## Payment Gateway Module Configuration
+
+### module.json
+```json
+{
+    "name": "YourGatewayNameGateway",
+    "alias": "yourgatewayname",
+    "description": "Secure payments through Your Gateway Name",
+    "category": "gateway",
+    "keywords": ["payment", "yourgatewayname", "gateway"],
+    "priority": 0,
+    "providers": [
+        "Modules\\YourGatewayNameGateway\\Providers\\YourGatewayNameGatewayServiceProvider"
+    ],
+    "files": [],
+    "hasSettings": true,
+    "settingsUrl": "/admin/yourgatewayname/settings",
+    "logo": "https://example.com/yourgateway-logo.png"
+}
+```
+
+**Key Points for Payment Gateway module.json**:
+- `category` must be set to `"gateway"`
+- Include payment-related keywords
+- Set `hasSettings` to `true` for admin configuration
+- Provide a `settingsUrl` for gateway configuration
+- Include a logo URL for the payment method display
+
+## Controllers
+
+### PaymentController.php
+**Must extend**: `App\Http\Controllers\BasePaymentController`
+
+The PaymentController handles payment processing routes and extends the BasePaymentController which provides all the standard payment methods.
+
+**Template**:
+```php
+<?php
+
+namespace Modules\YourGatewayNameGateway\Http\Controllers;
+
+use App\Http\Controllers\BasePaymentController;
+use App\Services\CurrencyService;
+use Modules\YourGatewayNameGateway\Services\YourGatewayNameGatewayPaymentService;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
+
+class PaymentController extends BasePaymentController
+{
+    public function __construct(CurrencyService $currencyService)
+    {
+        parent::__construct($currencyService);
+        $this->paymentService = new YourGatewayNameGatewayPaymentService();
+    }
+    
+    protected function getGatewayName(): string
+    {
+        return 'YourGatewayName';
+    }
+
+    // Add gateway-specific methods if needed
+    // For example, webhook handling for IPN-style gateways:
+    
+    /**
+     * Handle webhook notifications (if your gateway uses webhooks)
+     */
+    public function handleWebhook(Request $request)
+    {
+        Log::info('YourGatewayName webhook notification received', [
+            'data' => $request->all(),
+            'ip' => $request->ip()
+        ]);
+
+        try {
+            $webhookData = $request->all();
+            
+            // Process the webhook notification
+            $result = $this->paymentService->processWebhookNotification($webhookData);
+            
+            if ($result) {
+                Log::info('YourGatewayName webhook processed successfully', [
+                    'transaction_id' => $webhookData['transaction_id'] ?? 'unknown',
+                    'status' => $webhookData['status'] ?? 'unknown'
+                ]);
+                return response('OK', 200);
+            } else {
+                Log::error('YourGatewayName webhook processing failed', [
+                    'transaction_id' => $webhookData['transaction_id'] ?? 'unknown',
+                    'status' => $webhookData['status'] ?? 'unknown'
+                ]);
+                return response('FAILED', 400);
+            }
+        } catch (\Exception $e) {
+            Log::error('YourGatewayName webhook exception', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return response('ERROR', 500);
+        }
+    }
+
+    /**
+     * Override paymentSuccess if you need gateway-specific handling
+     * (Optional - BasePaymentController handles most cases)
+     */
+    public function paymentSuccess(Request $request)
+    {
+        // For gateways that use different parameter names
+        $sessionId = $request->get('session_id') ?? $request->get('token');
+
+        Log::info('YourGatewayName payment success callback received', [
+            'session_id' => $sessionId,
+            'request_params' => $request->all(),
+            'gateway' => $this->getGatewayName()
+        ]);
+
+        if (!$sessionId) {
+            Log::error('Invalid payment response - missing session ID', [
+                'session_id' => $sessionId,
+                'gateway' => $this->getGatewayName()
+            ]);
+            return redirect()->route('dashboard')->with('error', 'Invalid payment response');
+        }
+
+        // Use the parent method for standard processing
+        // Just modify the request to use standard parameter names
+        $request->merge(['token' => $sessionId]);
+        return parent::paymentSuccess($request);
+    }
+}
+```
+
+**Key Points**:
+- **Must extend** `BasePaymentController` - this provides all standard payment methods
+- **Must inject** `CurrencyService` in constructor and call parent constructor
+- **Must set** `$this->paymentService` to your gateway's payment service instance
+- **Must implement** `getGatewayName()` method
+- **Can override** standard methods like `paymentSuccess()` if needed for gateway-specific handling
+- **Can add** gateway-specific methods like webhook handlers
+
+## Routes
+
+Payment gateway modules use a specific routing structure with separate route files:
+
+### routes/web.php
+Main routes file that includes other route files:
+
+```php
+<?php
+
+use Illuminate\Support\Facades\Route;
+use Modules\YourGatewayNameGateway\Http\Controllers\YourGatewayNameGatewayController;
+
+Route::middleware(['auth', 'verified'])->group(function () {
+    Route::resource('yourgatewaynamegateway', YourGatewayNameGatewayController::class)->names('yourgatewayname');
+});
+
+require __DIR__.'/settings.php';
+require __DIR__.'/payment.php';
+```
+
+### routes/payment.php
+Dedicated payment routes file:
+
+```php
+<?php
+
+use Illuminate\Support\Facades\Route;
+use Modules\YourGatewayNameGateway\Http\Controllers\PaymentController;
+
+Route::middleware(['auth', 'verified'])->group(function () {
+    Route::post('/payment/yourgatewayname/create', [PaymentController::class, 'createPayment'])
+        ->name('yourgatewayname.payment.create');
+    Route::get('/payment/yourgatewayname/success', [PaymentController::class, 'paymentSuccess'])
+        ->name('yourgatewayname.payment.success');
+    Route::get('/payment/yourgatewayname/cancel', [PaymentController::class, 'paymentCancel'])
+        ->name('yourgatewayname.payment.cancel');
+    Route::post('/payment/yourgatewayname/pending/{service}/pay', [PaymentController::class, 'payPendingService'])
+        ->name('yourgatewayname.payment.pending');
+    Route::post('/payment/yourgatewayname/invoice/{invoice}/pay', [PaymentController::class, 'payInvoice'])
+        ->name('yourgatewayname.payment.invoice');
+});
+
+// Webhook endpoint - no auth required as it's called by the gateway
+Route::post('/payment/yourgatewayname/webhook', [PaymentController::class, 'handleWebhook'])
+    ->name('yourgatewayname.payment.webhook');
+```
+
+### routes/settings.php
+Admin settings routes:
+
+```php
+<?php
+
+use Illuminate\Support\Facades\Route;
+use Modules\YourGatewayNameGateway\Http\Controllers\SettingsController;
+
+Route::middleware(['auth', 'verified', 'admin'])->prefix('admin')->group(function () {
+    Route::get('/yourgatewayname/settings', [SettingsController::class, 'index'])
+        ->name('yourgatewayname.settings');
+    Route::post('/yourgatewayname/settings', [SettingsController::class, 'store'])
+        ->name('yourgatewayname.settings.store');
+});
+```
+
+**Route Naming Convention**:
+- Payment routes: `{gateway}.payment.{action}`
+- Settings routes: `{gateway}.settings`
+- Resource routes: `{gateway}` (for the main controller)
+
+**Important Route Features**:
+- **Authenticated routes**: Most routes require `auth` and `verified` middleware
+- **Webhook routes**: Must be accessible without authentication (called by external gateway)
+- **Admin routes**: Settings routes require admin middleware
+- **Separate files**: Use separate route files for organization (`payment.php`, `settings.php`)
+
+## Implementation Steps
+
+### Step 1: Create Module Structure
+1. Use `php artisan module:make YourGatewayNameGateway`
+2. Create the required directories and files
+3. Set up the service provider
+
+### Step 2: Implement Core Payment Service
+1. Create the payment service extending `BasePaymentService`
+2. Implement all required interface methods
+3. Add gateway-specific logic for payment processing
+
+### Step 3: Create Models and Migrations
+1. Create credentials model for storing API keys
+2. Write database migration for credentials table
+3. Test database setup
+
+### Step 4: Set Up Controllers and Routes
+1. Create PaymentController for handling payment flows
+2. Create SettingsController for admin configuration
+3. Define routes for payment processing and webhooks
+
+### Step 5: Configure Module
+1. Update `module.json` with correct category and settings
+2. Configure service provider
+3. Set up admin settings interface
+
+### Step 6: Testing
+1. Test payment creation and processing
+2. Test webhook handling
+3. Test error scenarios and edge cases
+
+## Best Practices for Payment Gateways
+
+### Security
+- Always validate webhook signatures when supported
+- Store sensitive credentials securely
+- Use HTTPS for all payment-related endpoints
+- Implement proper error handling without exposing sensitive data
+
+### Logging
+- Log all payment operations with sufficient detail
+- Include payment IDs, amounts, and status changes
+- Log errors with context but avoid logging sensitive data
+
+### Error Handling
+- Provide clear error messages to users
+- Handle network timeouts and API failures gracefully
+- Implement retry logic where appropriate
+
+### Testing
+- Test with sandbox/test environments first
+- Verify webhook handling with actual gateway notifications
+- Test various payment scenarios (success, failure, cancellation)
+
+This guide provides the foundation for creating payment gateway modules that integrate seamlessly with the application's payment processing system.

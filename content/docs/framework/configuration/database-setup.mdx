@@ -1,0 +1,41 @@
+---
+title: Database Setup
+description: Create a user for your database!
+---
+
+## Creating the Database
+
+DezerX Spartan requires a MariaDB/MySQL database to store its data. Follow these steps to create a dedicated database and user for your installation.
+
+### 1. Access MySQL/MariaDB
+
+First, log into your MySQL/MariaDB server as the root user:
+
+```bash
+mysql -u root -p
+```
+
+You'll be prompted to enter your root password that was set during the MariaDB installation.
+
+### 2. Create Database User and Database
+
+Execute the following SQL commands to create a dedicated user and database for DezerX Spartan:
+
+```sql
+# Remember to change 'yourPassword' below to be a unique, strong password
+CREATE USER 'dezer'@'127.0.0.1' IDENTIFIED BY 'yourPassword';
+CREATE DATABASE dezerx;
+GRANT ALL PRIVILEGES ON dezerx.* TO 'dezer'@'127.0.0.1' WITH GRANT OPTION;
+FLUSH PRIVILEGES;
+exit
+```
+
+### 3. Database Configuration Details
+
+Make note of these credentials as you'll need them during the DezerX Spartan setup:
+
+- **Database Host:** `127.0.0.1`
+- **Database Name:** `dezerx`
+- **Database User:** `dezer`
+- **Database Password:** `yourPassword` (the password you set above)
+- **Database Port:** `3306` (default)

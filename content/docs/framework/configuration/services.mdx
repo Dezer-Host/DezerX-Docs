@@ -1,0 +1,152 @@
+---
+title: Services Setup
+description: These manage ur subscriptions etc.
+---
+
+## Step 1: Setting Up Cron Job
+
+The cron job ensures Laravel's scheduler runs every minute to handle scheduled tasks like subscription renewals, notifications, and maintenance tasks.
+
+1. **Open your crontab file** for editing:
+
+```bash
+crontab -e
+```
+
+2. **Add the following line** to run Laravel's scheduler every minute:
+
+```bash
+* * * * * cd /path/to/your/DezerX && php artisan schedule:run >> /dev/null 2>&1
+```
+
+> **Important:** Replace `/path/to/your/DezerX` with the actual path to your DezerX installation directory.
+
+3. **Save and exit** the editor (in nano: `Ctrl+X`, then `Y`, then `Enter`)
+
+## Step 2: Creating a Systemd Service for Queue Worker
+
+The queue worker processes background jobs like sending emails, processing payments, and managing server deployments.
+
+1. **Create a systemd service file**:
+
+```bash
+sudo nano /etc/systemd/system/dezerx.service
+```
+
+2. **Add the following content**:
+
+```ini
+[Unit]
+Description=Laravel Queue Worker for DezerX
+After=network.target
+
+[Service]
+User=www-data
+Group=www-data
+WorkingDirectory=/path/to/your/DezerX
+ExecStart=/usr/bin/php /path/to/your/DezerX/artisan queue:work --queue=critical,high,medium,default,low --sleep=3 --tries=3
+Restart=always
+RestartSec=5
+StartLimitBurst=3
+StartLimitIntervalSec=60
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=dezerx-worker
+
+[Install]
+WantedBy=multi-user.target
+```
+
+> - Replace `/path/to/your/DezerX` with your actual installation path
+> - Adjust `User` and `Group` if your web server runs under different credentials
+> - The queue priorities are: `critical`, `high`, `medium`, `default`, `low`
+
+3. **Save and exit** the editor
+
+## Step 3: Enable and Start the Service
+
+1. **Reload systemd** to recognize the new service:
+
+```bash
+sudo systemctl daemon-reload
+```
+
+2. **Enable the service** to start automatically on boot:
+
+```bash
+sudo systemctl enable dezerx.service
+```
+
+3. **Start the service**:
+
+```bash
+sudo systemctl start dezerx.service
+```
+
+## Step 4: Verify Service Status
+
+Check that everything is running correctly:
+
+```bash
+sudo systemctl status dezerx.service
+```
+
+You should see output similar to:
+
+```
+● dezerx.service - Laravel Queue Worker for DezerX
+   Loaded: loaded (/etc/systemd/system/dezerx.service; enabled; vendor preset: enabled)
+   Active: active (running) since Mon 2024-01-01 12:00:00 UTC; 5min ago
+   Main PID: 12345 (php)
+   Tasks: 1 (limit: 4915)
+   Memory: 50.0M
+   CGroup: /system.slice/dezerx.service
+           └─12345 /usr/bin/php /path/to/your/DezerX/artisan queue:work
+```
+
+## Additional Management Commands
+
+### Restart the Service
+```bash
+sudo systemctl restart dezerx.service
+```
+
+### Stop the Service
+```bash
+sudo systemctl stop dezerx.service
+```
+
+### View Service Logs
+```bash
+sudo journalctl -u dezerx.service -f
+```
+
+### View Laravel Logs
+```bash
+tail -f /path/to/your/DezerX/storage/logs/laravel.log
+```
+
+## Troubleshooting
+
+### Common Issues
+
+1. **Service fails to start**
+   - Check file permissions on your DezerX directory
+   - Verify the path in the service file is correct
+   - Ensure PHP is installed and accessible at `/usr/bin/php`
+
+2. **Queue jobs not processing**
+   - Check if the database connection is working
+   - Verify Redis/database queue configuration
+   - Look at Laravel logs for error messages
+
+3. **Scheduled tasks not running**
+   - Verify the cron job was added correctly with `crontab -l`
+   - Check if the path in the cron job is correct
+   - Ensure PHP CLI is working properly
+
+### Log Locations
+
+- **Service logs**: `sudo journalctl -u dezerx.service`
+- **Laravel logs**: `/path/to/your/DezerX/storage/logs/laravel.log`
+- **System cron logs**: `/var/log/syslog` or `/var/log/cron`

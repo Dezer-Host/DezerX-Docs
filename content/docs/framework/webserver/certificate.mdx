@@ -1,0 +1,74 @@
+---
+title: SSL Certificate
+description: Get your SSL certificate before setting up ur NGINX or APACHE web browser
+---
+
+# Setup SSL with Certbot
+
+## Download Certbot Package
+
+We'll start by downloading the `certbot` package which can be used to create SSL certificates for your website.
+
+```bash
+# If using NGINX run the following:
+apt install -y certbot python3-certbot-nginx
+
+# If using Apache run the following:
+apt install -y certbot python3-certbot-apache
+```
+
+## Creating a Certificate
+
+Assuming you have set your domain to point to your webserver IP, you're ready to create a certificate. Creating an SSL cert is as simple as running one of the commands below:
+
+```bash
+# If you are using NGINX:
+certbot certonly --nginx -d example.com
+
+# If you are using Apache:
+certbot certonly --apache -d example.com
+
+# Use this if neither works. Make sure to stop your webserver first when using this method.
+certbot certonly --standalone -d example.com
+```
+
+## Multiple Domains/Subdomains
+
+You can secure multiple domains or subdomains in a single certificate:
+
+```bash
+certbot certonly --nginx -d example.com -d www.example.com -d api.example.com
+```
+
+## Automatic Renewal
+
+Certbot certificates expire every 90 days. Set up automatic renewal:
+
+```bash
+# Test renewal process
+certbot renew --dry-run
+
+# Add to crontab for automatic renewal
+echo "0 12 * * * /usr/bin/certbot renew --quiet" | sudo crontab -
+```
+
+## Certificate Locations
+
+Certificates are typically stored in:
+- **Certificate**: `/etc/letsencrypt/live/yourdomain.com/fullchain.pem`
+- **Private key**: `/etc/letsencrypt/live/yourdomain.com/privkey.pem`
+
+## Troubleshooting Tips
+
+- Ensure your domain's DNS A record points to your server's IP
+- Check that ports 80 and 443 are open in your firewall
+- For the standalone method, stop your web server first: `systemctl stop nginx` or `systemctl stop apache2`
+- If you get rate limit errors, Let's Encrypt has limits on certificate requests per domain
+
+## Post-Installation
+
+After creating certificates:
+- For NGINX: Update your server block to use the generated certificate files
+- For Apache: Update your virtual host configuration
+- Test your SSL configuration at [SSL Labs](https://www.ssllabs.com/ssltest/)
+

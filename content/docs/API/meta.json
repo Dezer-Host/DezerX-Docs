@@ -1,0 +1,12 @@
+{
+    "title": "API Documentation",
+    "description": "Official API Documentation",
+    "icon": "Braces",
+    "pages": [
+        "services",
+        "market",
+        "ticket",
+        "user"
+    ],  
+    "root": true
+}

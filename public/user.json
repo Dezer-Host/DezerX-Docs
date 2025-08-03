@@ -1,0 +1,1022 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "User Management API",
+    "description": "\nUser Management API allows you to create, view, update, and manage users in the system.\n\nThe API uses the following main variables:\n* **id**: the user identifier\n* **role**: user role name (must exist in admin_roles table)\n* **email**: unique email address for the user\n* **name**: user's full name\n\n## Authentication\n\nThis API requires Bearer token authentication. Include the token in the Authorization header:\n```\nAuthorization: Bearer YOUR_API_TOKEN\n```\n\n## Permissions\n\nEach endpoint requires specific permissions:\n* `users.create` - Create new users\n* `users.index` - View users list\n* `users.show` - View specific user details\n* `users.update` - Update user information and role\n* `users.destroy` - Delete users\n\n**Note:** The current API token example has permissions for `users.index`, `users.show`, `users.update`, and `users.destroy` but is missing `users.create`.\n\n## Rate Limiting\n\nAPI requests are rate limited. Please respect the limits to ensure service availability.\n\n## Business Logic\n\n### User Creation\n- Uses UserRegistrationService for consistent user creation\n- Automatically sets default avatar and IP address\n- Sends welcome notifications to new users\n- Password is automatically hashed for security\n\n### User Updates\n- All fields are optional - only provided fields will be updated\n- Email uniqueness is validated (excluding current user)\n- Role must exist in the admin_roles table\n- Password is automatically hashed when provided\n\n### User Deletion\n- Performs soft delete (user record is marked as deleted but not removed)\n- Associated services and other related data remain intact\n",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "https://serverpro.dezerx.com/api/application",
+      "description": "Production API Server"
+    }
+  ],
+  "paths": {
+    "/users": {
+      "get": {
+        "tags": ["Users"],
+        "summary": "Get All Users",
+        "description": "Retrieve a paginated list of all users with optional search functionality",
+        "operationId": "get_users_list",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "per_page",
+            "in": "query",
+            "description": "Number of users per page",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 15,
+              "minimum": 1,
+              "maximum": 100
+            },
+            "example": 10
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "description": "Search in user name or email",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "example": "john"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Users retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsersListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      },
+      "post": {
+        "tags": ["Users"],
+        "summary": "Create New User",
+        "description": "Create a new user in the system using the UserRegistrationService",
+        "operationId": "create_user",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateUserRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "User created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserCreateResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/users/{id}": {
+      "get": {
+        "tags": ["Users"],
+        "summary": "Get Specific User",
+        "description": "Retrieve details of a specific user including their role and associated services",
+        "operationId": "get_user_details",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "User ID",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "example": 1
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      },
+      "put": {
+        "tags": ["Users"],
+        "summary": "Update User",
+        "description": "Update user information including name, email, role, and password",
+        "operationId": "update_user",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "User ID",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "example": 2
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateUserRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "User updated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserUpdateResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "delete": {
+        "tags": ["Users"],
+        "summary": "Delete User",
+        "description": "Delete a specific user from the system (soft delete)",
+        "operationId": "delete_user",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "User ID",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "example": 3
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User deleted successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserDeleteResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/users/{id}/role": {
+      "patch": {
+        "tags": ["Users"],
+        "summary": "Update User Role",
+        "description": "Update a user's role specifically. This endpoint uses the same method as the general update endpoint but is specifically for role updates",
+        "operationId": "update_user_role",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "User ID",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "example": 2
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateUserRoleRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "User role updated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserUpdateResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Bearer token authentication"
+      }
+    },
+    "schemas": {
+      "AdminRole": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 1
+          },
+          "name": {
+            "type": "string",
+            "example": "superadmin"
+          },
+          "display_name": {
+            "type": "string",
+            "example": "Super Administrator"
+          },
+          "description": {
+            "type": "string",
+            "example": "Full system access - cannot be modified or deleted"
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": ["*"]
+          },
+          "is_system_role": {
+            "type": "boolean",
+            "example": true
+          },
+          "is_deletable": {
+            "type": "boolean",
+            "example": false
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2025-08-02T16:38:31.000000Z"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2025-08-02T16:38:31.000000Z"
+          }
+        }
+      },
+      "AdminRoleBasic": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "user"
+          },
+          "display_name": {
+            "type": "string",
+            "example": "User"
+          }
+        }
+      },
+      "Service": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 11
+          },
+          "service_name": {
+            "type": "string",
+            "example": "DezerX"
+          },
+          "product_id": {
+            "type": "integer",
+            "example": 1
+          },
+          "category_id": {
+            "type": "integer",
+            "example": 1
+          },
+          "owner_id": {
+            "type": "integer",
+            "example": 1
+          },
+          "extra_owners": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "nullable": true,
+            "example": null
+          },
+          "price": {
+            "type": "string",
+            "example": "5.00"
+          },
+          "original_price": {
+            "type": "string",
+            "nullable": true,
+            "example": null
+          },
+          "coupon_id": {
+            "type": "integer",
+            "nullable": true,
+            "example": null
+          },
+          "has_lifetime_discount": {
+            "type": "boolean",
+            "example": false
+          },
+          "billing_cycle": {
+            "type": "string",
+            "example": "yearly"
+          },
+          "due_date": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-08-02T17:52:20.000000Z"
+          },
+          "payment_method": {
+            "type": "string",
+            "nullable": true,
+            "example": null
+          },
+          "recurring": {
+            "type": "boolean",
+            "nullable": true,
+            "example": null
+          },
+          "status": {
+            "type": "string",
+            "example": "active"
+          },
+          "module": {
+            "type": "string",
+            "example": "LicenseService"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2025-08-02T17:52:20.000000Z"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2025-08-02T17:54:38.000000Z"
+          },
+          "last_reminded": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "example": null
+          }
+        }
+      },
+      "User": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 1
+          },
+          "role": {
+            "type": "string",
+            "example": "superadmin"
+          },
+          "name": {
+            "type": "string",
+            "example": "John Doe"
+          },
+          "email": {
+            "type": "string",
+            "example": "john@example.com"
+          },
+          "avatar": {
+            "type": "string",
+            "example": "assets/default-avatar.png"
+          },
+          "banner": {
+            "type": "string",
+            "nullable": true,
+            "example": null
+          },
+          "discord_id": {
+            "type": "string",
+            "nullable": true,
+            "example": null
+          },
+          "email_verified_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "example": null
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2025-08-02T16:38:48.000000Z"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2025-08-02T16:38:48.000000Z"
+          },
+          "admin_role": {
+            "$ref": "#/components/schemas/AdminRole"
+          },
+          "services": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Service"
+            }
+          }
+        }
+      },
+      "UserBasic": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 2
+          },
+          "name": {
+            "type": "string",
+            "example": "Jane Smith"
+          },
+          "email": {
+            "type": "string",
+            "example": "jane@example.com"
+          },
+          "role": {
+            "type": "string",
+            "example": "user"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2025-08-03T06:56:59.000000Z"
+          },
+          "email_verified_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "example": null
+          },
+          "admin_role": {
+            "$ref": "#/components/schemas/AdminRoleBasic"
+          }
+        }
+      },
+      "UserSimple": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 2
+          },
+          "role": {
+            "type": "string",
+            "example": "user"
+          },
+          "name": {
+            "type": "string",
+            "example": "Jane Smith Updated"
+          },
+          "email": {
+            "type": "string",
+            "example": "jane.updated@example.com"
+          },
+          "avatar": {
+            "type": "string",
+            "example": "assets/default-avatar.png"
+          },
+          "banner": {
+            "type": "string",
+            "nullable": true,
+            "example": null
+          },
+          "discord_id": {
+            "type": "string",
+            "nullable": true,
+            "example": null
+          },
+          "email_verified_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "example": null
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2025-08-03T06:56:59.000000Z"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2025-08-03T07:39:18.000000Z"
+          }
+        }
+      },
+      "CreateUserRequest": {
+        "type": "object",
+        "required": ["name", "email", "password"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 255,
+            "example": "John Doe"
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "maxLength": 255,
+            "example": "john@example.com"
+          },
+          "password": {
+            "type": "string",
+            "minLength": 8,
+            "example": "password123"
+          },
+          "role": {
+            "type": "string",
+            "example": "user"
+          }
+        }
+      },
+      "UpdateUserRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 255,
+            "example": "John Smith"
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "maxLength": 255,
+            "example": "johnsmith@example.com"
+          },
+          "role": {
+            "type": "string",
+            "example": "moderator"
+          },
+          "password": {
+            "type": "string",
+            "minLength": 8,
+            "example": "newpassword123"
+          }
+        }
+      },
+      "UpdateUserRoleRequest": {
+        "type": "object",
+        "required": ["role"],
+        "properties": {
+          "role": {
+            "type": "string",
+            "example": "admin"
+          }
+        }
+      },
+      "PaginationMeta": {
+        "type": "object",
+        "properties": {
+          "current_page": {
+            "type": "integer",
+            "example": 1
+          },
+          "first_page_url": {
+            "type": "string",
+            "example": "https://serverpro.dezerx.com/api/application/users?page=1"
+          },
+          "from": {
+            "type": "integer",
+            "example": 1
+          },
+          "last_page": {
+            "type": "integer",
+            "example": 1
+          },
+          "last_page_url": {
+            "type": "string",
+            "example": "https://serverpro.dezerx.com/api/application/users?page=1"
+          },
+          "links": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "url": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "label": {
+                  "type": "string"
+                },
+                "active": {
+                  "type": "boolean"
+                }
+              }
+            },
+            "example": [
+              {
+                "url": null,
+                "label": "&laquo; Previous",
+                "active": false
+              },
+              {
+                "url": "https://serverpro.dezerx.com/api/application/users?page=1",
+                "label": "1",
+                "active": true
+              },
+              {
+                "url": null,
+                "label": "Next &raquo;",
+                "active": false
+              }
+            ]
+          },
+          "next_page_url": {
+            "type": "string",
+            "nullable": true,
+            "example": null
+          },
+          "path": {
+            "type": "string",
+            "example": "https://serverpro.dezerx.com/api/application/users"
+          },
+          "per_page": {
+            "type": "integer",
+            "example": 15
+          },
+          "prev_page_url": {
+            "type": "string",
+            "nullable": true,
+            "example": null
+          },
+          "to": {
+            "type": "integer",
+            "example": 2
+          },
+          "total": {
+            "type": "integer",
+            "example": 2
+          }
+        }
+      },
+      "PaginatedUsers": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/PaginationMeta"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/UserBasic"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "UsersListResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/PaginatedUsers"
+          }
+        }
+      },
+      "UserResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/User"
+          }
+        }
+      },
+      "UserCreateResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": true
+          },
+          "message": {
+            "type": "string",
+            "example": "User created successfully"
+          },
+          "data": {
+            "$ref": "#/components/schemas/User"
+          }
+        }
+      },
+      "UserUpdateResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": true
+          },
+          "message": {
+            "type": "string",
+            "example": "User updated successfully"
+          },
+          "data": {
+            "$ref": "#/components/schemas/UserSimple"
+          }
+        }
+      },
+      "UserDeleteResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": true
+          },
+          "message": {
+            "type": "string",
+            "example": "User deleted successfully"
+          }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": false
+          },
+          "message": {
+            "type": "string",
+            "example": "An error occurred"
+          },
+          "errors": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "responses": {
+      "Unauthorized": {
+        "description": "Authentication required",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "error": {
+                  "type": "string",
+                  "example": "Unauthorized"
+                },
+                "message": {
+                  "type": "string",
+                  "example": "Bearer token required"
+                }
+              }
+            }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "Access forbidden - insufficient permissions",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "error": {
+                  "type": "string",
+                  "example": "Forbidden"
+                },
+                "message": {
+                  "type": "string",
+                  "example": "Insufficient permissions for this action"
+                }
+              }
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "User not found",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "success": false,
+              "message": "User not found"
+            }
+          }
+        }
+      },
+      "ValidationError": {
+        "description": "Validation error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "examples": {
+              "create_user_validation": {
+                "summary": "Create user validation error",
+                "value": {
+                  "success": false,
+                  "message": "Validation failed",
+                  "errors": {
+                    "name": ["The name field is required."],
+                    "email": ["The email has already been taken."],
+                    "role": ["The selected role is invalid."],
+                    "password": ["The password must be at least 8 characters."]
+                  }
+                }
+              },
+              "update_user_validation": {
+                "summary": "Update user validation error",
+                "value": {
+                  "success": false,
+                  "message": "Validation failed",
+                  "errors": {
+                    "email": ["The email has already been taken."],
+                    "role": ["The selected role is invalid."],
+                    "password": ["The password must be at least 8 characters."]
+                  }
+                }
+              },
+              "role_validation": {
+                "summary": "Role validation error",
+                "value": {
+                  "success": false,
+                  "message": "Validation failed",
+                  "errors": {
+                    "role": ["The role field is required.", "The selected role is invalid."]
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "InternalServerError": {
+        "description": "Internal server error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "examples": {
+              "create_error": {
+                "summary": "User creation error",
+                "value": {
+                  "success": false,
+                  "message": "Error creating user: Database connection failed"
+                }
+              },
+              "update_error": {
+                "summary": "User update error",
+                "value": {
+                  "success": false,
+                  "message": "Error updating user: Database connection failed"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

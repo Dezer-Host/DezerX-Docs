@@ -1,0 +1,7 @@
+{
+  "title": "Module Documentation",
+  "description": "Learn how to make your own module!",
+  "icon": "BoxIcon",
+    "pages": ["services", "gateways", "providers"],
+  "root": true
+}

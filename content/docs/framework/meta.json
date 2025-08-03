@@ -1,0 +1,8 @@
+{
+  "title": "Guide Documentation",
+  "description": "How to install and setup DezerX",
+  "icon": "Aperture",
+  "pages": ["index", "getting-started", "configuration", "webserver", "modules"],
+  "defaultOpen": true,
+  "root": true
+}

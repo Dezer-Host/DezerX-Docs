@@ -1,0 +1,1079 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Market Management API",
+    "description": "\nMarket Management API allows you to browse and manage marketplace products, categories, and coupons.\n\nThe API uses the following main variables:\n* **id**: the resource identifier\n* **status**: resource status (active, inactive, expired)\n* **category_id**: the category identifier for products\n* **product_id**: the product identifier\n\n## Authentication\n\nThis API requires Bearer token authentication. Include the token in the Authorization header:\n```\nAuthorization: Bearer YOUR_API_TOKEN\n```\n\n## Rate Limiting\n\nAPI requests are rate limited. Please respect the limits to ensure service availability.\n",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "https://api.example.com",
+      "description": "Production API Server"
+    }
+  ],
+  "paths": {
+    "/api/application/products": {
+      "get": {
+        "tags": ["Products"],
+        "summary": "Get Products List",
+        "description": "Retrieve a paginated list of products with optional filtering by search term, category, and status",
+        "operationId": "get_products_list",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "per_page",
+            "in": "query",
+            "description": "Number of products per page",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 15,
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "description": "Search term for product name or description",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "category_id",
+            "in": "query",
+            "description": "Filter by category ID",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "description": "Filter by product status",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["active", "inactive", "draft"]
+            }
+          },
+          {
+            "name": "stock",
+            "in": "query",
+            "description": "Filter by stock availability (0 for out of stock, >0 for in stock)",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "module",
+            "in": "query",
+            "description": "Filter by module type",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["LicenseService", "PterodactylService", "HostingModule"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Products retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductsListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    },
+    "/api/application/products/{id}": {
+      "get": {
+        "tags": ["Products"],
+        "summary": "Get Product Details",
+        "description": "Retrieve detailed information about a specific product by its ID",
+        "operationId": "get_product_details",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Product ID",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Product retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/application/categories": {
+      "get": {
+        "tags": ["Categories"],
+        "summary": "Get Categories List",
+        "description": "Retrieve a paginated list of categories with optional filtering by search term and status",
+        "operationId": "get_categories_list",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "per_page",
+            "in": "query",
+            "description": "Number of categories per page",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 15,
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "description": "Search term for category name or description",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "parent_id",
+            "in": "query",
+            "description": "Filter by parent category ID (not used in current implementation)",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "nullable": true
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "description": "Filter by category status (not used in current implementation)",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["active", "inactive"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Categories retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CategoriesListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    },
+    "/api/application/categories/{id}": {
+      "get": {
+        "tags": ["Categories"],
+        "summary": "Get Category Details",
+        "description": "Retrieve detailed information about a specific category by its ID, including subcategories and products",
+        "operationId": "get_category_details",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Category ID",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "include_products",
+            "in": "query",
+            "description": "Include products in this category (not used in current implementation)",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          },
+          {
+            "name": "include_subcategories",
+            "in": "query",
+            "description": "Include subcategories (not used in current implementation)",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Category retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CategoryResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/application/coupons": {
+      "get": {
+        "tags": ["Coupons"],
+        "summary": "Get Coupons List",
+        "description": "Retrieve a paginated list of coupons with optional filtering by search term, type, and status",
+        "operationId": "get_coupons_list",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "per_page",
+            "in": "query",
+            "description": "Number of coupons per page",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 15,
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "description": "Search term for coupon code or name",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "description": "Filter by coupon type",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["percentage", "fixed_amount"]
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "description": "Filter by coupon status",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["active", "inactive", "expired"]
+            }
+          },
+          {
+            "name": "valid_from",
+            "in": "query",
+            "description": "Filter coupons valid from this date (not used in current implementation)",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "valid_until",
+            "in": "query",
+            "description": "Filter coupons valid until this date (not used in current implementation)",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Coupons retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CouponsListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    },
+    "/api/application/coupons/{id}": {
+      "get": {
+        "tags": ["Coupons"],
+        "summary": "Get Coupon Details",
+        "description": "Retrieve detailed information about a specific coupon by its ID",
+        "operationId": "get_coupon_details",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Coupon ID",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Coupon retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CouponResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Bearer token authentication"
+      }
+    },
+    "schemas": {
+      "Product": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 1
+          },
+          "name": {
+            "type": "string",
+            "example": "Premium Web Hosting"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true,
+            "example": "High-performance web hosting with 99.9% uptime guarantee"
+          },
+          "stock": {
+            "type": "integer",
+            "example": 10
+          },
+          "image": {
+            "type": "string",
+            "nullable": true,
+            "example": "/images/products/hosting.jpg"
+          },
+          "category_id": {
+            "type": "integer",
+            "example": 1
+          },
+          "module": {
+            "type": "string",
+            "nullable": true,
+            "example": "LicenseService"
+          },
+          "module_config": {
+            "type": "object",
+            "nullable": true,
+            "description": "Module-specific configuration data",
+            "example": {
+              "product_file": "products/1_1754152748_5_1753695926_Module.zip",
+              "is_downloadable_via_api": "1",
+              "is_downloadable_via_web": "1"
+            }
+          },
+          "duration_config": {
+            "type": "object",
+            "nullable": true,
+            "description": "Pricing configuration for different billing cycles",
+            "properties": {
+              "weekly": {
+                "type": "object",
+                "properties": {
+                  "price": {
+                    "type": "number"
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                }
+              },
+              "monthly": {
+                "type": "object",
+                "properties": {
+                  "price": {
+                    "type": "number"
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                }
+              },
+              "quarterly": {
+                "type": "object",
+                "properties": {
+                  "price": {
+                    "type": "number"
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                }
+              },
+              "yearly": {
+                "type": "object",
+                "properties": {
+                  "price": {
+                    "type": "number"
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                }
+              },
+              "lifetime": {
+                "type": "object",
+                "properties": {
+                  "price": {
+                    "type": "number"
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            },
+            "example": {
+              "weekly": {
+                "price": 0,
+                "enabled": false
+              },
+              "monthly": {
+                "price": 29.99,
+                "enabled": true
+              },
+              "quarterly": {
+                "price": 0,
+                "enabled": false
+              },
+              "yearly": {
+                "price": 299.99,
+                "enabled": true
+              },
+              "lifetime": {
+                "price": 0,
+                "enabled": false
+              }
+            }
+          },
+          "status": {
+            "type": "string",
+            "enum": ["active", "inactive", "draft"],
+            "example": "active"
+          },
+          "position": {
+            "type": "integer",
+            "example": 1
+          },
+          "create_service_before_payment": {
+            "type": "boolean",
+            "example": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2025-08-02T16:39:06.000000Z"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2025-08-02T16:40:13.000000Z"
+          },
+          "category": {
+            "$ref": "#/components/schemas/CategoryBasic"
+          }
+        }
+      },
+      "CategoryBasic": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 1
+          },
+          "name": {
+            "type": "string",
+            "example": "Web Hosting"
+          }
+        }
+      },
+      "Category": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 1
+          },
+          "name": {
+            "type": "string",
+            "example": "Web Hosting"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true,
+            "example": "Professional web hosting solutions for all business sizes"
+          },
+          "image": {
+            "type": "string",
+            "nullable": true,
+            "example": "/images/categories/web-hosting.jpg"
+          },
+          "position": {
+            "type": "integer",
+            "example": 1
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2025-08-02T16:38:59.000000Z"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2025-08-02T16:38:59.000000Z"
+          },
+          "products_count": {
+            "type": "integer",
+            "example": 3
+          }
+        }
+      },
+      "Coupon": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 1
+          },
+          "code": {
+            "type": "string",
+            "example": "SUMMER2024"
+          },
+          "name": {
+            "type": "string",
+            "example": "Summer Sale"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true,
+            "example": "Special discount for summer season"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["percentage", "fixed_amount"],
+            "example": "percentage"
+          },
+          "value": {
+            "type": "string",
+            "example": "10.00"
+          },
+          "usage_limit": {
+            "type": "integer",
+            "nullable": true,
+            "example": null
+          },
+          "used_count": {
+            "type": "integer",
+            "example": 0
+          },
+          "one_time_use": {
+            "type": "boolean",
+            "example": true
+          },
+          "new_users_only": {
+            "type": "boolean",
+            "example": false
+          },
+          "new_users_scope": {
+            "type": "string",
+            "enum": ["any", "first_order"],
+            "example": "any"
+          },
+          "target_product_id": {
+            "type": "integer",
+            "nullable": true,
+            "example": null
+          },
+          "target_category_id": {
+            "type": "integer",
+            "nullable": true,
+            "example": 1
+          },
+          "is_lifetime": {
+            "type": "boolean",
+            "example": true
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "example": null
+          },
+          "status": {
+            "type": "string",
+            "enum": ["active", "inactive", "expired"],
+            "example": "active"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2025-08-02T18:21:30.000000Z"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2025-08-02T18:21:30.000000Z"
+          },
+          "coupon_uses_count": {
+            "type": "integer",
+            "example": 0
+          },
+          "target_product": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Product"
+              }
+            ],
+            "nullable": true
+          },
+          "target_category": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CategoryBasic"
+              }
+            ],
+            "nullable": true
+          }
+        }
+      },
+      "PaginationMeta": {
+        "type": "object",
+        "properties": {
+          "current_page": {
+            "type": "integer",
+            "example": 1
+          },
+          "first_page_url": {
+            "type": "string",
+            "example": "https://api.example.com/api/application/products?page=1"
+          },
+          "from": {
+            "type": "integer",
+            "example": 1
+          },
+          "last_page": {
+            "type": "integer",
+            "example": 10
+          },
+          "last_page_url": {
+            "type": "string",
+            "example": "https://api.example.com/api/application/products?page=10"
+          },
+          "links": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "url": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "label": {
+                  "type": "string"
+                },
+                "active": {
+                  "type": "boolean"
+                }
+              }
+            }
+          },
+          "next_page_url": {
+            "type": "string",
+            "nullable": true,
+            "example": "https://api.example.com/api/application/products?page=2"
+          },
+          "path": {
+            "type": "string",
+            "example": "https://api.example.com/api/application/products"
+          },
+          "per_page": {
+            "type": "integer",
+            "example": 15
+          },
+          "prev_page_url": {
+            "type": "string",
+            "nullable": true,
+            "example": null
+          },
+          "to": {
+            "type": "integer",
+            "example": 15
+          },
+          "total": {
+            "type": "integer",
+            "example": 150
+          }
+        }
+      },
+      "PaginatedProducts": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/PaginationMeta"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Product"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "PaginatedCategories": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/PaginationMeta"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Category"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "PaginatedCoupons": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/PaginationMeta"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Coupon"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "ProductsListResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/PaginatedProducts"
+          }
+        }
+      },
+      "ProductResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/Product"
+          }
+        }
+      },
+      "CategoriesListResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/PaginatedCategories"
+          }
+        }
+      },
+      "CategoryResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/Category"
+          }
+        }
+      },
+      "CouponsListResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/PaginatedCoupons"
+          }
+        }
+      },
+      "CouponResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/Coupon"
+          }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": false
+          },
+          "message": {
+            "type": "string",
+            "example": "An error occurred"
+          },
+          "errors": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "ValidationError": {
+        "type": "object",
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          }
+        },
+        "required": ["loc", "msg", "type"]
+      }
+    },
+    "responses": {
+      "Unauthorized": {
+        "description": "Authentication required",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "success": false,
+              "message": "Unauthenticated"
+            }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "Access forbidden",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "success": false,
+              "message": "This action is unauthorized"
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "Resource not found",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "success": false,
+              "message": "Resource not found"
+            }
+          }
+        }
+      },
+      "ValidationError": {
+        "description": "Validation error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "success": false,
+              "message": "Validation failed",
+              "errors": {
+                "field_name": [
+                  "This field is required"
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

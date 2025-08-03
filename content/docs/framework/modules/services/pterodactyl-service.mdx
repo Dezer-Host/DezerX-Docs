@@ -1,0 +1,86 @@
+---
+title: Pterodactyl Setup
+description: Follow this docs to setup Pterodactyl!
+---
+
+# Pterodactyl Setup
+
+Follow this documentation to setup Pterodactyl with DezerX!
+
+## Step 1: Edit Pterodactyl Configuration
+
+1. **Open the Pterodactyl configuration file** by running the following command:
+
+```bash
+sudo nano /etc/pterodactyl/config.yml
+```
+
+> **Note:** If you're using a different text editor (e.g., `vi` or `vim`), replace `nano` with your preferred editor.
+
+2. **Scroll down** until you find the following line in the configuration file:
+
+```yaml
+allowed_origins: []
+```
+
+3. **Modify it** to include the allowed origins for your DezerX dashboard:
+
+```yaml
+allowed_origins:
+  - https://dash.example.com
+  - http://dash.example.com
+```
+
+> **Important:** Replace `https://dash.example.com` and `http://dash.example.com` with your actual dashboard URLs.
+
+## Step 2: Restart Wings
+
+After saving the configuration changes, you need to **restart the Wings service** to apply them. Run:
+
+```bash
+sudo systemctl restart wings
+```
+
+## Step 3: Configure DezerX Admin Panel
+
+1. **Navigate to Admin Panel**: Go to `Admin → Modules → Pterodactyl Service`
+
+![Spartan Configuration Panel](/spartan.png)
+
+2. **Get Application API Key**:
+   - In your Pterodactyl admin panel, navigate to the Application API section
+   - Generate a new API key with appropriate permissions
+   - Copy the generated key
+
+![Application API Configuration](/application-api.png)
+
+3. **Get Client API Key**:
+   - Navigate to your Pterodactyl account settings
+   - Go to the API Credentials section
+   - Create a new client API key
+   - Copy the generated key
+
+![Client API Configuration](/client-api.png)
+
+4. **Configure in DezerX**:
+   - Paste the Application API key in the designated field
+   - Paste the Client API key in the designated field
+   - Enter your Pterodactyl panel URL
+   - Click the "Test Connection" button to verify the setup
+
+## Testing Your Setup
+
+Once you've configured both API keys and the panel URL:
+
+1. Click the **"Test Connection"** button in the DezerX admin panel
+2. If successful, you'll see a confirmation message
+3. If there are any errors, double-check your API keys and panel URL
+
+## Troubleshooting
+
+If you encounter any issues:
+
+- Verify that your API keys have the correct permissions
+- Ensure your Pterodactyl panel URL is correct and accessible
+- Check that the `allowed_origins` configuration includes your DezerX dashboard URL
+- Make sure the Wings service has been restarted after configuration changes

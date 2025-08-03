@@ -1,0 +1,84 @@
+---
+title: Getting Started
+description: Installation Steps
+---
+
+## Prerequisites
+
+Before installing DezerX Spartan, you need to install the required dependencies. The commands below are simply an example of how you might install these dependencies. Please consult with your operating system's package manager to determine the correct packages to install.
+
+### Installing Dependencies
+
+```bash
+# Add "add-apt-repository" command
+apt -y install software-properties-common curl apt-transport-https ca-certificates gnupg
+
+# Add additional repositories for PHP (Ubuntu 22.04)
+LC_ALL=C.UTF-8 add-apt-repository -y ppa:ondrej/php
+
+# Add Redis official APT repository
+curl -fsSL https://packages.redis.io/gpg | sudo gpg --dearmor -o /usr/share/keyrings/redis-archive-keyring.gpg
+echo "deb [signed-by=/usr/share/keyrings/redis-archive-keyring.gpg] https://packages.redis.io/deb $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/redis.list
+
+# Update repositories list
+apt update
+
+# Install Dependencies
+apt -y install php8.3 php8.3-{common,cli,gd,mysql,mbstring,bcmath,xml,fpm,curl,zip} mariadb-server nginx redis-server
+```
+
+### Dependency Overview
+
+The installation includes:
+- **PHP 8.3** with essential extensions
+- **MariaDB Server** for database functionality
+- **Nginx** web server
+- **Redis** for caching and session management
+
+### Installing Composer
+
+Composer is a dependency manager for PHP that allows us to ship everything you'll need code wise to operate the Panel. You'll need composer installed before continuing in this process.
+
+```bash
+curl -sS https://getcomposer.org/installer | sudo php -- --install-dir=/usr/local/bin --filename=composer
+```
+
+## Installation Steps
+
+After installing the prerequisites, proceed with the DezerX Spartan installation:
+
+### 1. Navigate to Web Directory
+
+```bash
+cd /var/www/
+```
+
+### 2. Upload and Extract DezerX Spartan
+
+Upload your DezerX Spartan zip file to the `/var/www/` directory, then extract it:
+
+```bash
+# Unzip the DezerX Spartan file (replace 'dezerx-spartan.zip' with your actual filename)
+unzip dezerx-spartan.zip
+```
+
+### 3. Rename the Directory
+
+```bash
+# Rename the extracted directory to 'spartan' (adjust source directory name as needed)
+mv dezerx-spartan-main spartan
+```
+
+### 4. Set Proper Permissions
+
+```bash
+# Navigate to the spartan directory
+cd spartan
+
+# Set proper ownership and permissions
+chown -R www-data:www-data /var/www/spartan
+chmod -R 755 /var/www/spartan
+```
+
+## Cards
+

@@ -1,0 +1,866 @@
+---
+title: How to make Social Provider
+description: How to make a Social Provider in DezerX!
+icon: "BoxIcon"
+full: true
+---
+
+# Social Provider Development Guide
+
+This guide explains how to create social provider modules (like DiscordProvider, GoogleProvider, GitHubProvider, etc.) for OAuth-based authentication and account linking in the application.
+
+## Quick Start - Social Provider
+
+### Creating a New Social Provider Module
+
+Use Laravel nwidart's module generator to create your social provider module:
+
+```bash
+php artisan module:make YourProviderNameProvider
+```
+
+**Important**: Social provider module names must always end with "Provider" (e.g., DiscordProvider, GoogleProvider, GitHubProvider).
+
+### Creating the Social Provider Structure
+
+After creating the module, you need to create the social provider structure:
+
+```bash
+# Navigate to your module directory
+cd Modules/YourProviderNameProvider
+
+# Create the Models directory
+mkdir -p app/Models
+
+# Create the credentials model
+touch app/Models/YourProviderNameCredential.php
+
+# Create additional controllers if needed
+touch app/Http/Controllers/SettingsController.php
+```
+
+## Social Provider Module Structure
+
+A social provider module follows this directory structure:
+
+```
+Modules/YourProviderNameProvider/
+├── app/
+│   ├── Http/Controllers/
+│   │   ├── YourProviderNameProviderController.php
+│   │   └── SettingsController.php
+│   ├── Models/
+│   │   └── YourProviderNameCredential.php
+│   └── Providers/
+│       ├── EventServiceProvider.php
+│       ├── RouteServiceProvider.php
+│       └── YourProviderNameProviderServiceProvider.php
+├── config/
+├── database/
+│   └── migrations/
+├── resources/
+│   └── js/Pages/
+│       └── Settings.tsx
+├── routes/
+│   ├── web.php
+│   └── settings.php
+├── tests/
+├── composer.json
+├── module.json
+├── package.json
+└── vite.config.js
+```
+
+## Core Social Provider Files
+
+### 1. Main Provider Controller (app/Http/Controllers/YourProviderNameProviderController.php)
+
+**Purpose**: Handles OAuth redirect and callback for social authentication.
+
+**Template**:
+```php
+<?php
+
+namespace Modules\YourProviderNameProvider\Http\Controllers;
+
+use App\Http\Controllers\Controller;
+use App\Services\UserRegistrationService;
+use Illuminate\Http\Request;
+use Laravel\Socialite\Facades\Socialite;
+use Illuminate\Support\Facades\Auth;
+use Nwidart\Modules\Facades\Module;
+use SocialiteProviders\Manager\Config;
+use Illuminate\Support\Facades\Log;
+use Modules\YourProviderNameProvider\Models\YourProviderNameCredential;
+
+class YourProviderNameProviderController extends Controller
+{
+    protected $userRegistrationService;
+
+    public function __construct(UserRegistrationService $userRegistrationService)
+    {
+        $this->userRegistrationService = $userRegistrationService;
+    }
+
+    public function redirect()
+    {
+        if (!Module::isEnabled('YourProviderNameProvider')) {
+            Log::warning('YourProviderNameProvider module is disabled during redirect.');
+            return redirect('/login');
+        }
+
+        $credential = YourProviderNameCredential::first();
+
+        if (!$credential) {
+            Log::error('YourProviderName credentials not found in database.');
+            return redirect('/login')->with('error', 'YourProviderName credentials not configured.');
+        }
+
+        Log::info('Redirecting to YourProviderName OAuth', [
+            'client_id' => $credential->client_id,
+            'callback_url' => $credential->callback_url,
+        ]);
+
+        return Socialite::driver('yourprovidername')
+            ->setConfig(new Config(
+                $credential->client_id,
+                $credential->client_secret,
+                $credential->callback_url
+            ))
+            ->redirect();
+    }
+
+    public function callback()
+    {
+        try {
+            if (!Module::isEnabled('YourProviderNameProvider')) {
+                Log::warning('YourProviderNameProvider module is disabled during callback.');
+                return redirect('/login');
+            }
+
+            $credential = YourProviderNameCredential::first();
+
+            if (!$credential) {
+                Log::error('YourProviderName credentials not found in database.');
+                return redirect('/login')->with('error', 'YourProviderName credentials not configured.');
+            }
+
+            Log::info('YourProviderName callback initiated', [
+                'client_id' => $credential->client_id,
+                'callback_url' => $credential->callback_url,
+            ]);
+
+            $socialUser = Socialite::driver('yourprovidername')
+                ->setConfig(new Config(
+                    $credential->client_id,
+                    $credential->client_secret,
+                    $credential->callback_url
+                ))
+                ->user();
+
+            Log::info('YourProviderName user fetched', [
+                'id' => $socialUser->getId(),
+                'email' => $socialUser->getEmail(),
+                'name' => $socialUser->getName(),
+            ]);
+
+            // Check if user is already authenticated (linking scenario)
+            if (Auth::check()) {
+                $user = Auth::user();
+                
+                // IMPORTANT: Check if provider ID is already linked to another user
+                // This prevents account hijacking and ensures data integrity
+                $existingUser = \App\Models\User::where('yourprovidername_id', $socialUser->getId())
+                    ->where('id', '!=', $user->id)
+                    ->first();
+                
+                if ($existingUser) {
+                    Log::warning('YourProviderName ID already linked to another user', [
+                        'provider_id' => $socialUser->getId(),
+                        'existing_user_id' => $existingUser->id,
+                        'current_user_id' => $user->id
+                    ]);
+                    return redirect()->route('profile')->with('error', 'This YourProviderName account is already linked to another user.');
+                }
+                
+                // IMPORTANT: Check if current user already has this provider linked
+                // This prevents overwriting existing provider connections
+                if ($user->yourprovidername_id && $user->yourprovidername_id !== $socialUser->getId()) {
+                    Log::warning('User already has different YourProviderName account linked', [
+                        'user_id' => $user->id,
+                        'existing_provider_id' => $user->yourprovidername_id,
+                        'new_provider_id' => $socialUser->getId()
+                    ]);
+                    return redirect()->route('profile')->with('error', 'You already have a different YourProviderName account linked. Please unlink it first.');
+                }
+                
+                // IMPORTANT: Check if this is the same provider ID already linked
+                // This handles the case where user clicks link button multiple times
+                if ($user->yourprovidername_id === $socialUser->getId()) {
+                    Log::info('YourProviderName account already linked to current user', [
+                        'user_id' => $user->id,
+                        'provider_id' => $socialUser->getId()
+                    ]);
+                    return redirect()->route('profile')->with('info', 'This YourProviderName account is already linked to your account.');
+                }
+                
+                // Link provider ID to current user
+                $user->update([
+                    'yourprovidername_id' => $socialUser->getId()
+                ]);
+                
+                Log::info('YourProviderName account linked to existing user', [
+                    'user_id' => $user->id,
+                    'provider_id' => $socialUser->getId()
+                ]);
+                
+                return redirect()->route('profile')->with('success', 'YourProviderName account linked successfully.');
+            }
+
+            // Original registration/login flow for non-authenticated users
+            $user = $this->userRegistrationService->registerViaYourProviderName($socialUser);
+            
+            Auth::login($user);
+            Log::info('User logged in', ['user_id' => $user->id]);
+
+            return redirect()->intended('/dashboard');
+        } catch (\Exception $e) {
+            Log::error('YourProviderName authentication failed', [
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            // Redirect based on authentication status
+            if (Auth::check()) {
+                return redirect()->route('profile')->with('error', 'Failed to link YourProviderName account. Please try again.');
+            }
+            
+            return redirect('/login');
+        }
+    }
+}
+```
+
+### 2. Credentials Model (app/Models/YourProviderNameCredential.php)
+
+**Purpose**: Stores OAuth credentials for the social provider.
+
+**Template**:
+```php
+<?php
+
+namespace Modules\YourProviderNameProvider\Models;
+
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Crypt;
+
+class YourProviderNameCredential extends Model
+{
+    protected $table = 'yourprovidername_credentials';
+
+    protected $fillable = [
+        'client_id',
+        'client_secret',
+        'callback_url',
+    ];
+
+    // Encrypt client_secret when setting
+    public function setClientSecretAttribute($value)
+    {
+        $this->attributes['client_secret'] = Crypt::encryptString($value);
+    }
+
+    // Decrypt client_secret when getting
+    public function getClientSecretAttribute($value)
+    {
+        return Crypt::decryptString($value);
+    }
+}
+```
+
+### 3. Settings Controller (app/Http/Controllers/SettingsController.php)
+
+**Purpose**: Handles admin configuration of OAuth credentials.
+
+**Template**:
+```php
+<?php
+
+namespace Modules\YourProviderNameProvider\Http\Controllers;
+
+use Illuminate\Http\Request;
+use Illuminate\Routing\Controller;
+use Inertia\Inertia;
+use Modules\YourProviderNameProvider\Models\YourProviderNameCredential;
+
+class SettingsController extends Controller
+{
+    public function index()
+    {
+        return Inertia::render('YourProviderNameProvider/Settings', [
+            'settings' => $this->getSettings(),
+            'flash' => [
+                'success' => session('success'),
+                'error' => session('error'),
+                'warning' => session('warning'),
+                'info' => session('info')
+            ]
+        ]);
+    }
+
+    private function getSettings(?YourProviderNameCredential $credential = null): array
+    {
+        if (!$credential) {
+            $credential = YourProviderNameCredential::first();
+        }
+
+        return [
+            'client_id' => $credential ? $credential->client_id : '',
+            'client_secret' => $credential ? $credential->client_secret : '',
+            'redirect_uri' => $credential ? $credential->callback_url : '',
+        ];
+    }
+
+    public function update(Request $request)
+    {
+        $request->validate([
+            'client_id' => 'required|string',
+            'client_secret' => 'required|string',
+            'redirect_uri' => 'required|url',
+        ]);
+
+        try {
+            $credential = YourProviderNameCredential::first() ?? new YourProviderNameCredential();
+            
+            $credential->client_id = $request->client_id;
+            $credential->client_secret = $request->client_secret;
+            $credential->callback_url = $request->redirect_uri;
+            
+            $credential->save();
+
+            return back()->with('success', 'YourProviderName settings updated successfully');
+        } catch (\Exception $e) {
+            return back()->with('error', 'Failed to update YourProviderName settings: ' . $e->getMessage());
+        }
+    }
+}
+```
+
+## Database Migration
+
+Create a migration for storing OAuth credentials:
+
+```php
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::create('yourprovidername_credentials', function (Blueprint $table) {
+            $table->id();
+            $table->string('client_id');
+            $table->text('client_secret'); // Use text for encrypted data
+            $table->string('callback_url');
+            $table->timestamps();
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::dropIfExists('yourprovidername_credentials');
+    }
+};
+```
+
+## User Model Integration
+
+Add the provider ID column to your users table migration:
+
+```php
+// In your users table migration
+$table->string('yourprovidername_id')->nullable()->unique();
+```
+
+## UserRegistrationService Integration
+
+Add a method to handle registration via your social provider in `app/Services/UserRegistrationService.php`:
+
+```php
+public function registerViaYourProviderName(SocialiteUser $socialUser): User
+{
+    $avatarPath = $this->saveYourProviderNameAvatar($socialUser);
+    $ip = request()->ip();
+
+    $user = User::where('yourprovidername_id', $socialUser->getId())->first();
+
+    if (!$user) {
+        $user = User::where('email', $socialUser->getEmail())->first();
+
+        if (!$user) {
+            $user = User::create([
+                'name' => $socialUser->getName(),
+                'email' => $socialUser->getEmail(),
+                'password' => Hash::make(Str::random(16)),
+                'yourprovidername_id' => $socialUser->getId(),
+                'avatar' => $avatarPath,
+                'ip' => $ip,
+            ]);
+            Log::info('New user created via YourProviderName', ['user_id' => $user->id]);
+            
+            // Create welcome notification for new user
+            $this->notificationService->notifyUserRegistration($user, 'yourprovidername');
+        } else {
+            $user->update([
+                'yourprovidername_id' => $socialUser->getId(),
+                'avatar' => $avatarPath,
+                'ip' => $ip,
+            ]);
+            Log::info('Existing user updated with YourProviderName info', ['user_id' => $user->id]);
+        }
+    } else {
+        $user->update([
+            'avatar' => $avatarPath,
+            'ip' => $ip,
+        ]);
+        Log::info('Existing YourProviderName user avatar updated', ['user_id' => $user->id]);
+    }
+
+    return $user;
+}
+
+private function saveYourProviderNameAvatar(SocialiteUser $socialUser): string
+{
+    $avatarContents = file_get_contents($socialUser->getAvatar());
+    $avatarFileName = 'yourprovidername_' . $socialUser->getId() . '.png';
+    $avatarPath = 'images/profiles/' . $avatarFileName;
+
+    if (!file_exists(public_path('images/profiles'))) {
+        mkdir(public_path('images/profiles'), 0755, true);
+    }
+
+    file_put_contents(public_path($avatarPath), $avatarContents);
+
+    return $avatarPath;
+}
+```
+
+## Social Provider Module Configuration
+
+### module.json
+```json
+{
+    "name": "YourProviderNameProvider",
+    "alias": "yourprovidernameprovider",
+    "description": "YourProviderName Social Login Provider",
+    "category": "social",
+    "keywords": ["social", "oauth", "yourprovidername", "authentication"],
+    "priority": 0,
+    "providers": [
+        "Modules\\YourProviderNameProvider\\Providers\\YourProviderNameProviderServiceProvider"
+    ],
+    "files": [],
+    "hasSettings": true,
+    "settingsUrl": "/admin/yourprovidername/settings",
+    "logo": "https://example.com/yourprovidername-logo.svg",
+    "link_url": "/auth/yourprovidername/redirect",
+    "link_column": "yourprovidername_id"
+}
+```
+
+**Key Points for Social Provider module.json**:
+- `category` must be set to `"social"`
+- Include social and OAuth-related keywords
+- Set `hasSettings` to `true` for admin configuration
+- Provide a `settingsUrl` for OAuth credential configuration
+- Include a `logo` URL for the social login button
+- Set `link_url` to the OAuth redirect route
+- Set `link_column` to the database column name for the provider ID
+
+## Routes
+
+### routes/web.php
+Main routes file that includes OAuth routes:
+
+```php
+<?php
+
+use Illuminate\Support\Facades\Route;
+use Modules\YourProviderNameProvider\Http\Controllers\YourProviderNameProviderController;
+
+Route::prefix('auth/yourprovidername')->group(function () {
+    Route::get('redirect', [YourProviderNameProviderController::class, 'redirect'])
+        ->name('yourprovidername.redirect');
+    Route::get('callback', [YourProviderNameProviderController::class, 'callback'])
+        ->name('yourprovidername.callback');
+});
+
+require __DIR__.'/settings.php';
+```
+
+### routes/settings.php
+Admin settings routes:
+
+```php
+<?php
+
+use Illuminate\Support\Facades\Route;
+use Modules\YourProviderNameProvider\Http\Controllers\SettingsController;
+use App\Http\Middleware\AdminMiddleware;
+
+Route::middleware([AdminMiddleware::class])->group(function () {
+    Route::get('/admin/yourprovidername/settings', [SettingsController::class, 'index'])
+        ->name('yourprovidername.settings');
+    Route::post('/admin/yourprovidername/settings', [SettingsController::class, 'update'])
+        ->name('yourprovidername.settings.update');
+});
+```
+
+**Route Naming Convention**:
+- OAuth routes: `{provider}.redirect` and `{provider}.callback`
+- Settings routes: `{provider}.settings`
+
+**Important Route Features**:
+- **OAuth routes**: No authentication required (users may not be logged in)
+- **Admin routes**: Settings routes require admin middleware
+- **Separate files**: Use separate route files for organization (`settings.php`)
+
+## Socialite Provider Integration
+
+### Installing Socialite Provider
+
+If your provider isn't built into Laravel Socialite, you'll need to install the appropriate Socialite provider:
+
+```bash
+composer require socialiteproviders/yourprovidername
+```
+
+### Service Provider Configuration
+
+Add the provider to your module's service provider:
+
+```php
+// In YourProviderNameProviderServiceProvider.php
+public function boot()
+{
+    $this->loadRoutesFrom(__DIR__.'/../../routes/web.php');
+    
+    // Register the socialite provider
+    Event::listen(function (\SocialiteProviders\Manager\SocialiteWasCalled $event) {
+        $event->extendSocialite('yourprovidername', \SocialiteProviders\YourProviderName\Provider::class);
+    });
+}
+```
+
+## Frontend Integration
+
+### Module Registration (resources/js/register.ts)
+
+**Purpose**: Registers the module's frontend pages with the application's module system.
+
+**Template**:
+```typescript
+import { registerModulePages } from '../../../../resources/js/modulePages';
+
+registerModulePages({
+  'YourProviderNameProvider/Settings': () => import('./Pages/Settings.tsx'),
+});
+```
+
+**Key Points**:
+- **Must be named** `register.ts` in the `resources/js/` directory
+- **Must use** the exact module name format: `{ModuleName}/Settings`
+- **Must use** dynamic imports for lazy loading
+- **Must register** all pages that will be accessed via the admin interface
+
+### Frontend Directory Structure
+
+Create the complete frontend structure:
+
+```bash
+# Navigate to your module directory
+cd Modules/YourProviderNameProvider
+
+# Create frontend directories
+mkdir -p resources/js/Pages
+
+# Create the registration file
+touch resources/js/register.ts
+
+# Create the settings page
+touch resources/js/Pages/Settings.tsx
+```
+
+### Settings Page (resources/js/Pages/Settings.tsx)
+
+Create a React component for admin settings that matches the application's design system:
+
+```tsx
+import React, { useState } from 'react';
+import AdminLayout from '../../../../../resources/js/layouts/AdminLayout';
+import { motion } from 'framer-motion';
+import { useToast } from '../../../../../resources/js/contexts/ToastContext';
+import Tooltip from '../../../../../resources/js/components/ui/Tooltip';
+import axios from 'axios';
+
+interface SettingsProps {
+  settings: {
+    client_id: string;
+    client_secret: string;
+    redirect_uri: string;
+  };
+  flash: {
+    success?: string;
+    error?: string;
+    warning?: string;
+    info?: string;
+  };
+}
+
+const Settings = ({ settings, flash }: SettingsProps) => {
+  const [formData, setFormData] = useState(settings);
+  const { addToast } = useToast();
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    try {
+      const response = await axios.post('/admin/yourprovidername/settings', formData, {
+        headers: {
+          'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content'),
+          'Accept': 'application/json',
+        }
+      });
+      
+      addToast({
+        type: 'success',
+        title: 'Success',
+        message: 'YourProviderName settings updated successfully',
+        duration: 5000,
+      });
+      
+      // Reload the page to get updated data
+      window.location.reload();
+      
+    } catch (error: any) {
+      if (error.response?.status === 422) {
+        // Validation errors
+        addToast({
+          type: 'error',
+          title: 'Validation Error',
+          message: 'Please check the form for errors.',
+          duration: 5000,
+        });
+      } else {
+        addToast({
+          type: 'error',
+          title: 'Error',
+          message: error.response?.data?.message || 'Failed to update YourProviderName settings.',
+          duration: 5000,
+        });
+      }
+    }
+  };
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: value
+    }));
+  };
+
+  return (
+    <AdminLayout>
+      <div className="">
+        <div className="flex py-8 items-center gap-3">
+          <div>
+            <motion.h1
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: 0.3 }}
+              className="text-2xl font-bold text-primary font-montserrat"
+            >
+              YourProviderName Module
+            </motion.h1>
+            <motion.p
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: 0.4 }}
+              className="text-secondary"
+            >
+              Configure YourProviderName Login Provider
+            </motion.p>
+          </div>
+        </div>
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.3 }}
+          className="max-w-2xl border border-primary bg-secondary rounded-lg p-6"
+        >
+          <h1 className="text-2xl font-bold mb-6 text-primary">YourProviderName Settings</h1>
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium mb-1 text-primary">
+                <span className="text-red-500">*</span>{' '} Client ID 
+                <Tooltip content="Example: 123456789012345678">
+                  <span className="ml-2 cursor-help text-primary font-bold">?</span>
+                </Tooltip>
+              </label>
+              <motion.input
+                type="text"
+                name="client_id"
+                value={formData.client_id}
+                onChange={handleChange}
+                placeholder="Enter Client ID"
+                className="w-full rounded-md border border-primary bg-primary text-primary p-2.5 focus:border-primary focus:outline-none focus:ring-0"
+                required
+                initial={{ scale: 0.95, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{ duration: 0.3 }}
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1 text-primary">
+                <span className="text-red-500">*</span>{' '} Client Secret 
+                <Tooltip content="Example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...">
+                  <span className="ml-2 cursor-help text-primary font-bold">?</span>
+                </Tooltip>
+              </label>
+              <motion.input
+                type="password"
+                name="client_secret"
+                value={formData.client_secret}
+                onChange={handleChange}
+                placeholder="Enter Secret Key"
+                className="w-full rounded-md border border-primary bg-primary text-primary p-2.5 focus:border-primary focus:outline-none focus:ring-0"
+                required
+                initial={{ scale: 0.95, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{ duration: 0.3 }}
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1 text-primary">
+               <span className="text-red-500">*</span>{' '} Redirect URI 
+                <Tooltip content="Example: https://yourdomain.com/auth/yourprovidername/callback">
+                  <span className="ml-2 cursor-help text-primary font-bold">?</span>
+                </Tooltip>
+              </label>
+              <motion.input
+                type="url"
+                name="redirect_uri"
+                value={formData.redirect_uri}
+                onChange={handleChange}
+                placeholder="https://yourdomain.com/auth/yourprovidername/callback"
+                className="w-full rounded-md border border-primary bg-primary text-primary p-2.5 focus:border-primary focus:outline-none focus:ring-0"
+                required
+                initial={{ scale: 0.95, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{ duration: 0.3 }}
+              />
+            </div>
+
+            <div className="pt-4">
+              <motion.button
+                type="submit"
+                className="w-full button-primary rounded-md py-2 px-4 focus:outline-none focus:ring-2 focus:ring-sidebar focus:ring-offset-2"
+                initial={{ scale: 0.95, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{ duration: 0.3 }}
+              >
+                Save Settings
+              </motion.button>
+            </div>
+          </form>
+        </motion.div>
+      </div>
+    </AdminLayout>
+  );
+};
+
+export default Settings;
+```
+
+**Key Features of the Settings Component**:
+- **Uses AdminLayout**: Consistent with application design
+- **Framer Motion**: Smooth animations for better UX
+- **Toast Notifications**: User feedback for actions
+- **Tooltips**: Help text for form fields
+- **Axios Integration**: Direct API calls with CSRF protection
+- **Error Handling**: Proper validation and error display
+- **Responsive Design**: Works on all screen sizes
+
+## Implementation Steps
+
+### Step 1: Create Module Structure
+1. Use `php artisan module:make YourProviderNameProvider`
+2. Create the required directories and files
+3. Set up the service provider
+
+### Step 2: Install Socialite Provider
+1. Install the appropriate Socialite provider package
+2. Configure the provider in your service provider
+3. Test OAuth redirect functionality
+
+### Step 3: Create Models and Migrations
+1. Create credentials model for storing OAuth keys
+2. Write database migration for credentials table
+3. Add provider ID column to users table
+
+### Step 4: Implement Controllers
+1. Create main provider controller with redirect/callback methods
+2. Create settings controller for admin configuration
+3. Test OAuth flow end-to-end
+
+### Step 5: Integrate with UserRegistrationService
+1. Add registration method for your provider
+2. Handle avatar downloading and storage
+3. Test user creation and linking
+
+### Step 6: Configure Module
+1. Update `module.json` with correct category and settings
+2. Set up routes for OAuth and admin settings
+3. Create frontend settings page
+
+### Step 7: Testing
+1. Test OAuth redirect and callback
+2. Test user registration and login
+3. Test account linking for existing users
+4. Test admin settings interface
+
+## Best Practices for Social Providers
+
+### Security
+- Always encrypt client secrets in the database
+- Validate OAuth state parameters to prevent CSRF
+- Use HTTPS for all OAuth redirect URIs
+- Implement proper error handling without exposing sensitive data
+
+### User Experience
+- Handle both new user registration and existing user linking
+- Provide clear error messages for OAuth failures
+- Support account unlinking in user profile settings
+- Download and store user avatars locally
+
+### Error Handling
+- Log OAuth errors with sufficient context
+- Handle network timeouts and API failures gracefully
+- Provide fallback authentication methods
+- Handle edge cases like email conflicts
+
+### Testing
+- Test with actual OAuth provider (not just mocks)
+- Test both registration and login flows
+- Test account linking and unlinking
+- Test admin settings interface
+
+This guide provides the foundation for creating social provider modules that integrate seamlessly with the application's authentication system and support both new user registration and existing user account linking.

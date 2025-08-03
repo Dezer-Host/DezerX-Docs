@@ -1,0 +1,666 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Service Management API",
+    "description": "\nService Management API allows you to create and manage services in the system through the KarasuClient API.\n\nThe API supports two main service types:\n* **Product-based services**: Created from existing products in the system\n* **Custom services**: Created with custom specifications and pricing\n\nServices follow a status flow from `pending` → `active` and can be integrated with external modules for automated provisioning.\n\n## Authentication\n\nThis API requires Bearer token authentication. Include the token in the Authorization header:\n```\nAuthorization: Bearer YOUR_API_TOKEN\n```\n\n## Required Permissions\n\nEach endpoint requires specific permissions:\n* `services.create` - Create new services\n* `services.activate` - Activate pending services\n\n## Service Status Flow\n\nServices are created with `pending` status and must be activated to become `active`. The activation process:\n1. Marks any unpaid invoices as paid with `api_activation` payment method\n2. Dispatches provisioning jobs if the service has an associated module\n3. Updates service status and logs the activity\n\n## Billing Cycles\n\nValid billing cycles for custom services:\n- `monthly`, `quarterly`, `semi-annually`, `annually`, `biennially`, `triennially`, `one-time`\n\n## Custom Fields and Buttons\n\n- `custom_fields`: Array of objects with `label` and `value` properties for service metadata\n- `custom_buttons`: Array of objects with `label` and `action` properties for service controls\n- Both are stored as JSON in the database under the `custom_fields` column\n\n## Rate Limiting\n\nAPI requests are rate limited. Please respect the limits to ensure service availability.\n",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "https://api.example.com/api/application",
+      "description": "Production API Server"
+    }
+  ],
+  "paths": {
+    "/services": {
+      "post": {
+        "tags": ["Services"],
+        "summary": "Create Service",
+        "description": "Creates a new service for a user. Services can be created from existing products or as custom services with custom pricing and specifications.",
+        "operationId": "create_service",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/CreateProductServiceRequest"
+                  },
+                  {
+                    "$ref": "#/components/schemas/CreateCustomServiceRequest"
+                  }
+                ]
+              },
+              "examples": {
+                "product_service": {
+                  "summary": "Create Product-based Service",
+                  "value": {
+                    "user_id": 123,
+                    "service_type": "product",
+                    "product_id": 456,
+                    "due_date": "2024-02-15",
+                    "notes": "VPS for client project"
+                  }
+                },
+                "custom_service": {
+                  "summary": "Create Custom Service",
+                  "value": {
+                    "user_id": 123,
+                    "service_type": "custom",
+                    "service_name": "Custom VPS Service",
+                    "price": 29.99,
+                    "billing_cycle": "monthly",
+                    "category_id": 789,
+                    "due_date": "2024-02-15",
+                    "notes": "Custom VPS with specific requirements",
+                    "custom_fields": [
+                      {
+                        "label": "CPU Cores",
+                        "value": "4"
+                      },
+                      {
+                        "label": "Storage",
+                        "value": "100GB SSD"
+                      }
+                    ],
+                    "custom_buttons": [
+                      {
+                        "label": "Power On",
+                        "action": "power_on"
+                      },
+                      {
+                        "label": "Power Off",
+                        "action": "power_off"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Service created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceCreateResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/services/{id}/activate": {
+      "post": {
+        "tags": ["Services"],
+        "summary": "Activate Service",
+        "description": "Activates a pending service, dispatching the creation job and marking associated invoices as paid. Only services with 'pending' status can be activated.",
+        "operationId": "activate_service",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Service ID to activate",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "example": 789
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Service activation job queued successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceActivateResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestNotPending"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Bearer token authentication"
+      }
+    },
+    "schemas": {
+      "CustomField": {
+        "type": "object",
+        "required": ["label", "value"],
+        "properties": {
+          "label": {
+            "type": "string",
+            "example": "Server Location"
+          },
+          "value": {
+            "type": "string",
+            "example": "US East"
+          }
+        }
+      },
+      "CustomButton": {
+        "type": "object",
+        "required": ["label", "action"],
+        "properties": {
+          "label": {
+            "type": "string",
+            "example": "Restart Server"
+          },
+          "action": {
+            "type": "string",
+            "example": "restart"
+          }
+        }
+      },
+      "ServiceOwner": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 123
+          },
+          "name": {
+            "type": "string",
+            "example": "John Doe"
+          },
+          "email": {
+            "type": "string",
+            "example": "john@example.com"
+          }
+        }
+      },
+      "ServiceProduct": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 456
+          },
+          "name": {
+            "type": "string",
+            "example": "VPS Hosting"
+          }
+        }
+      },
+      "ServiceCategory": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 1
+          },
+          "name": {
+            "type": "string",
+            "example": "Hosting"
+          }
+        }
+      },
+      "ServiceCustomFieldsData": {
+        "type": "object",
+        "properties": {
+          "custom_fields": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CustomField"
+            }
+          },
+          "custom_buttons": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CustomButton"
+            }
+          }
+        }
+      },
+      "Service": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 789
+          },
+          "owner_id": {
+            "type": "integer",
+            "example": 123
+          },
+          "product_id": {
+            "type": "integer",
+            "nullable": true,
+            "example": 456
+          },
+          "category_id": {
+            "type": "integer",
+            "example": 1
+          },
+          "service_name": {
+            "type": "string",
+            "example": "VPS Hosting"
+          },
+          "price": {
+            "type": "string",
+            "example": "19.99"
+          },
+          "billing_cycle": {
+            "type": "string",
+            "enum": ["monthly", "quarterly", "semi-annually", "annually", "biennially", "triennially", "one-time"],
+            "example": "monthly"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["pending", "active", "suspended", "terminated"],
+            "example": "pending"
+          },
+          "due_date": {
+            "type": "string",
+            "format": "date",
+            "example": "2024-02-15"
+          },
+          "notes": {
+            "type": "string",
+            "nullable": true,
+            "example": "VPS for client project"
+          },
+          "custom_fields": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ServiceCustomFieldsData"
+              }
+            ],
+            "nullable": true
+          },
+          "module": {
+            "type": "string",
+            "nullable": true,
+            "example": "PterodactylService"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2024-01-15T10:30:00.000000Z"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2024-01-15T10:30:00.000000Z"
+          },
+          "owner": {
+            "$ref": "#/components/schemas/ServiceOwner"
+          },
+          "product": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ServiceProduct"
+              }
+            ],
+            "nullable": true
+          },
+          "category": {
+            "$ref": "#/components/schemas/ServiceCategory"
+          }
+        }
+      },
+      "CreateProductServiceRequest": {
+        "type": "object",
+        "required": ["user_id", "service_type", "product_id"],
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "example": 123
+          },
+          "service_type": {
+            "type": "string",
+            "enum": ["product"],
+            "example": "product"
+          },
+          "product_id": {
+            "type": "integer",
+            "example": 456
+          },
+          "due_date": {
+            "type": "string",
+            "format": "date",
+            "example": "2024-02-15"
+          },
+          "notes": {
+            "type": "string",
+            "example": "VPS for client project"
+          }
+        }
+      },
+      "CreateCustomServiceRequest": {
+        "type": "object",
+        "required": ["user_id", "service_type", "service_name", "price", "billing_cycle", "category_id"],
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "example": 123
+          },
+          "service_type": {
+            "type": "string",
+            "enum": ["custom"],
+            "example": "custom"
+          },
+          "service_name": {
+            "type": "string",
+            "example": "Custom VPS Service"
+          },
+          "price": {
+            "type": "number",
+            "format": "decimal",
+            "example": 29.99
+          },
+          "billing_cycle": {
+            "type": "string",
+            "enum": ["monthly", "quarterly", "semi-annually", "annually", "biennially", "triennially", "one-time"],
+            "example": "monthly"
+          },
+          "category_id": {
+            "type": "integer",
+            "example": 789
+          },
+          "due_date": {
+            "type": "string",
+            "format": "date",
+            "example": "2024-02-15"
+          },
+          "notes": {
+            "type": "string",
+            "example": "Custom VPS with specific requirements"
+          },
+          "custom_fields": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CustomField"
+            }
+          },
+          "custom_buttons": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CustomButton"
+            }
+          }
+        }
+      },
+      "ServiceCreateResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": true
+          },
+          "message": {
+            "type": "string",
+            "example": "Service created successfully"
+          },
+          "data": {
+            "$ref": "#/components/schemas/Service"
+          }
+        }
+      },
+      "ServiceActivateResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": true
+          },
+          "message": {
+            "type": "string",
+            "example": "Service activation job has been queued. The service will be activated shortly. 1 unpaid invoice(s) have been marked as paid."
+          },
+          "data": {
+            "$ref": "#/components/schemas/Service"
+          }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": false
+          },
+          "message": {
+            "type": "string",
+            "example": "An error occurred"
+          },
+          "errors": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "responses": {
+      "Unauthorized": {
+        "description": "Authentication required",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "error": {
+                  "type": "string",
+                  "example": "Unauthorized"
+                },
+                "message": {
+                  "type": "string",
+                  "example": "Bearer token required"
+                }
+              }
+            }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "Access forbidden - insufficient permissions",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "error": {
+                  "type": "string",
+                  "example": "Forbidden"
+                },
+                "message": {
+                  "type": "string",
+                  "example": "Insufficient permissions for this action"
+                }
+              }
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "Service not found",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "success": false,
+              "message": "Service not found"
+            }
+          }
+        }
+      },
+      "BadRequestNotPending": {
+        "description": "Service is not in pending status",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "success": false,
+              "message": "Only pending services can be activated"
+            }
+          }
+        }
+      },
+      "ValidationError": {
+        "description": "Validation error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "examples": {
+              "product_service_validation": {
+                "summary": "Product service validation error",
+                "value": {
+                  "success": false,
+                  "message": "Validation failed",
+                  "errors": {
+                    "user_id": ["The user id field is required."],
+                    "service_type": ["The service type field is required."],
+                    "product_id": ["The product id field is required."]
+                  }
+                }
+              },
+              "custom_service_validation": {
+                "summary": "Custom service validation error",
+                "value": {
+                  "success": false,
+                  "message": "Validation failed",
+                  "errors": {
+                    "user_id": ["The user id field is required."],
+                    "service_type": ["The service type field is required."],
+                    "service_name": ["The service name field is required."],
+                    "price": ["The price field is required.", "The price must be a number."],
+                    "billing_cycle": ["The billing cycle field is required.", "The selected billing cycle is invalid."],
+                    "category_id": ["The category id field is required."]
+                  }
+                }
+              },
+              "invalid_user": {
+                "summary": "Invalid user ID",
+                "value": {
+                  "success": false,
+                  "message": "Validation failed",
+                  "errors": {
+                    "user_id": ["The selected user id is invalid."]
+                  }
+                }
+              },
+              "invalid_product": {
+                "summary": "Invalid product ID",
+                "value": {
+                  "success": false,
+                  "message": "Validation failed",
+                  "errors": {
+                    "product_id": ["The selected product id is invalid."]
+                  }
+                }
+              },
+              "invalid_category": {
+                "summary": "Invalid category ID",
+                "value": {
+                  "success": false,
+                  "message": "Validation failed",
+                  "errors": {
+                    "category_id": ["The selected category id is invalid."]
+                  }
+                }
+              },
+              "custom_fields_format": {
+                "summary": "Custom fields format error",
+                "value": {
+                  "success": false,
+                  "message": "Validation failed",
+                  "errors": {
+                    "custom_fields.0.label": ["The custom fields.0.label field is required."],
+                    "custom_fields.0.value": ["The custom fields.0.value field is required."]
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "InternalServerError": {
+        "description": "Internal server error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "examples": {
+              "create_error": {
+                "summary": "Service creation error",
+                "value": {
+                  "success": false,
+                  "message": "Error creating service: Database connection failed"
+                }
+              },
+              "activation_error": {
+                "summary": "Service activation error",
+                "value": {
+                  "success": false,
+                  "message": "Error activating service: External service provisioning failed"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
