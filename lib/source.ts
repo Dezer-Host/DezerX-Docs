@@ -5,7 +5,7 @@ import { Aperture, Braces, BoxIcon, CreditCardIcon, ServerIcon } from 'lucide-re
 import { createElement } from 'react';
 
 export const source = loader({
-  baseUrl: '/docs/framework/',
+  baseUrl: '/docs',
   source: docs.toFumadocsSource(),
   pageTree: {
     attachFile,
