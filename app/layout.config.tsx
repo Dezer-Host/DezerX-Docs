@@ -12,7 +12,7 @@ export const baseOptions: BaseLayoutProps = {
     title: (
       <div className="flex items-center space-x-2 p-2 sm:space-x-4">
         <img src="/logo.png" className="h-12 sm:h-16 w-auto" alt="DezerX Spartan Logo" />
-        <span className="text-lg sm:text-2xl font-semibold">DezerX Spartan</span>
+        <span className="text-lg sm:text-xl font-semibold">DezerX Spartan</span>
       </div>
 
     ),
