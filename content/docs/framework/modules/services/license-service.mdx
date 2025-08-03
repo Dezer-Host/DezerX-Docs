@@ -1,0 +1,352 @@
+---
+title: License Setup
+description: Follow this docs to Interegrate licensing in ur product using our License Service!
+---
+
+# License Service API Documentation
+
+## Overview
+
+The License Service API provides endpoints for license verification, file downloads, and authentication for licensed products. This API uses Bearer token authentication with license keys and implements domain-based restrictions and rate limiting.
+
+## Base URL
+
+```
+/api/license
+```
+
+## Authentication
+
+All protected endpoints require Bearer token authentication using a valid license key.
+
+### Authorization Header Format
+
+```
+Authorization: Bearer {license_key}
+```
+
+### Domain Validation
+
+Most endpoints require domain validation. The domain can be provided in two ways:
+
+1. **Request Parameter**: `domain` in the request body/query parameters
+2. **Header**: `X-Domain` header
+
+**Domain Format**: The domain should be provided without protocol (http/https) and without www prefix.
+
+Examples:
+- ✅ `example.com`
+- ✅ `subdomain.example.com`
+- ❌ `https://example.com`
+- ❌ `www.example.com`
+
+## Rate Limiting
+
+- **Default Limit**: 60 requests per minute per IP address
+- **Window**: 60 seconds
+- **Error Response**: HTTP 429 when limit exceeded
+
+## API Endpoints
+
+### 1. Verify License
+
+Verifies if a license key is valid and returns license information.
+
+**Endpoint**: `GET /api/license/verify`
+
+**Authentication**: Required (Bearer token + domain)
+
+**Parameters**:
+- `domain` (string, required): The domain to validate against
+
+**Headers**:
+- `Authorization: Bearer {license_key}` (required)
+- `X-Domain: {domain}` (optional, alternative to domain parameter)
+
+**Success Response** (200):
+```json
+{
+  "success": true,
+  "message": "License is valid and active",
+  "data": {
+    "license_id": 123,
+    "license_key": "your-license-key",
+    "product_id": 456,
+    "product_name": "Product Name",
+    "user_id": 789,
+    "is_active": true,
+    "last_rotated": "2024-01-01T00:00:00.000000Z",
+    "created_at": "2024-01-01T00:00:00.000000Z",
+    "domain": "example.com"
+  }
+}
+```
+
+### 2. Generate Download Token
+
+Creates a one-time download token for accessing product files.
+
+**Endpoint**: `POST /api/license/download`
+
+**Authentication**: Required (Bearer token + domain)
+
+**Parameters**:
+- `domain` (string, required): The domain to validate against
+
+**Headers**:
+- `Authorization: Bearer {license_key}` (required)
+- `X-Domain: {domain}` (optional, alternative to domain parameter)
+
+**Success Response** (200):
+```json
+{
+  "success": true,
+  "message": "Download token generated successfully",
+  "data": {
+    "download_url": "https://yoursite.com/api/license/download-file/abc123...",
+    "expires_at": "2024-01-02T00:00:00.000Z",
+    "product_name": "Product Name",
+    "file_size": 1048576
+  }
+}
+```
+
+**Notes**:
+- Download tokens expire after 24 hours
+- Tokens are single-use only
+- Product must have `is_downloadable_via_api` enabled
+- Product must have a valid `product_file` configured
+
+### 3. Download File
+
+Downloads a product file using a one-time token.
+
+**Endpoint**: `GET /api/license/download-file/{token}`
+
+**Authentication**: None (public endpoint, uses token)
+
+**Parameters**:
+- `token` (string, required): One-time download token from the download endpoint
+
+**Success Response**: 
+- **Content-Type**: `application/octet-stream` (or appropriate file type)
+- **Headers**: 
+  - `Cache-Control: no-cache, no-store, must-revalidate`
+  - `Pragma: no-cache`
+  - `Expires: 0`
+- **Body**: File content for download
+
+**Notes**:
+- Token is marked as used after successful download
+- Files are served with no-cache headers to prevent browser caching
+- Supports both private storage (`storage/app/private/`) and public paths
+
+## Error Codes and Responses
+
+### Authentication Errors
+
+#### Missing Authorization Header (401)
+```json
+{
+  "success": false,
+  "message": "Authorization header missing or invalid format",
+  "error_code": "MISSING_AUTHORIZATION"
+}
+```
+
+#### Missing License Key (401)
+```json
+{
+  "success": false,
+  "message": "License key is required",
+  "error_code": "MISSING_LICENSE_KEY"
+}
+```
+
+#### Invalid License Key (401)
+```json
+{
+  "success": false,
+  "message": "Invalid license key",
+  "error_code": "INVALID_LICENSE"
+}
+```
+
+### Domain Validation Errors
+
+#### Missing Domain (400)
+```json
+{
+  "success": false,
+  "message": "Domain is required",
+  "error_code": "MISSING_DOMAIN"
+}
+```
+
+#### Domain Mismatch (403)
+```json
+{
+  "success": false,
+  "message": "Domain mismatch. License not valid for this domain.",
+  "error_code": "DOMAIN_MISMATCH"
+}
+```
+
+#### No Domain Configured (403)
+```json
+{
+  "success": false,
+  "message": "No domain configured for this license",
+  "error_code": "NO_DOMAIN_CONFIGURED"
+}
+```
+
+### License Status Errors
+
+#### Inactive License (403)
+```json
+{
+  "success": false,
+  "message": "License is inactive or suspended",
+  "error_code": "INACTIVE_LICENSE"
+}
+```
+
+### Rate Limiting Error (429)
+```json
+{
+  "success": false,
+  "message": "Too many requests. Please try again later.",
+  "error_code": "RATE_LIMIT_EXCEEDED"
+}
+```
+
+### Download Errors
+
+#### No Downloadable File (404)
+```json
+{
+  "success": false,
+  "message": "No downloadable file available for this product"
+}
+```
+
+#### API Download Disabled (403)
+```json
+{
+  "success": false,
+  "message": "API download is disabled for this product"
+}
+```
+
+#### Product File Not Found (404)
+```json
+{
+  "success": false,
+  "message": "Product file not found"
+}
+```
+
+#### Invalid/Expired Token (404)
+```json
+{
+  "success": false,
+  "message": "Invalid or expired download token"
+}
+```
+
+## Usage Examples
+
+### Example 1: Verify License
+
+```bash
+curl -X GET "https://yoursite.com/api/license/verify" \
+  -H "Authorization: Bearer your-license-key-here" \
+  -H "X-Domain: example.com" \
+  -H "Content-Type: application/json"
+```
+
+### Example 2: Generate Download Token
+
+```bash
+curl -X POST "https://yoursite.com/api/license/download" \
+  -H "Authorization: Bearer your-license-key-here" \
+  -H "Content-Type: application/json" \
+  -d '{"domain": "example.com"}'
+```
+
+### Example 3: Download File
+
+```bash
+curl -X GET "https://yoursite.com/api/license/download-file/your-token-here" \
+  -o "downloaded-file.zip"
+```
+
+## Integration Guide
+
+### Step 1: License Verification
+
+Before allowing access to your application, verify the license:
+
+```php
+$response = Http::withHeaders([
+    'Authorization' => 'Bearer ' . $licenseKey,
+    'X-Domain' => $currentDomain
+])->get('https://yoursite.com/api/license/verify');
+
+if ($response->successful() && $response->json('success')) {
+    // License is valid, proceed with application
+    $licenseData = $response->json('data');
+} else {
+    // Handle license verification failure
+    $errorCode = $response->json('error_code');
+}
+```
+
+### Step 2: File Download (Optional)
+
+If your product includes downloadable files:
+
+```php
+// Generate download token
+$response = Http::withHeaders([
+    'Authorization' => 'Bearer ' . $licenseKey,
+])->post('https://yoursite.com/api/license/download', [
+    'domain' => $currentDomain
+]);
+
+if ($response->successful()) {
+    $downloadUrl = $response->json('data.download_url');
+    // Redirect user to download URL or provide download link
+}
+```
+
+## Security Considerations
+
+1. **HTTPS Only**: Always use HTTPS in production to protect license keys in transit
+2. **Token Storage**: Never store license keys in client-side code or logs
+3. **Domain Validation**: Ensure domain validation is properly configured for each license
+4. **Rate Limiting**: Implement client-side rate limiting to avoid hitting API limits
+5. **Token Expiry**: Download tokens expire after 24 hours and are single-use
+6. **Error Handling**: Implement proper error handling for all possible error codes
+
+## Troubleshooting
+
+### Common Issues
+
+1. **Domain Mismatch**: Ensure the domain parameter matches exactly with the configured domain (without protocol/www)
+2. **Rate Limiting**: Implement exponential backoff when receiving 429 responses
+3. **Token Expiry**: Download tokens are valid for 24 hours only
+4. **File Not Found**: Ensure product files are properly configured and exist in the specified path
+
+### Debug Steps
+
+1. Verify license key format and validity
+2. Check domain configuration in license settings
+3. Confirm product has downloadable files enabled
+4. Check server logs for detailed error information
+5. Verify API rate limits haven't been exceeded
+
+## Support
+
+For technical support or questions about the License Service API, please contact your system administrator or refer to the main application documentation.
