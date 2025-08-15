@@ -126,7 +126,7 @@ export default function HomePage() {
                 className="w-full sm:w-auto"
               >
                 <Link
-                  href="/docs/framework/API/services/activate_service"
+                  href="/docs/API/services/activate_service"
                   className="inline-flex items-center justify-center w-full sm:w-auto px-6 py-3 rounded-2xl text-sm sm:text-base"
                 >
                   <span>API Documentation</span>
